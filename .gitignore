@@ -216,3 +216,29 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Project-specific
+data/raw/*.csv
+data/raw/*.xlsx
+data/raw/*.parquet
+!data/raw/.gitkeep
+data/processed/*
+!data/processed/.gitkeep
+
+# Environment
+.env
+.env.local
+venv/
+.venv/
+
+# Notebooks
+.ipynb_checkpoints/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.vscode/
+.idea/
+*.swp
