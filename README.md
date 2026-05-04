@@ -19,13 +19,14 @@ The work is structured in three parts:
 
 | Member  | GitHub          | Time Series      |
 |---------|-----------------|------------------|
-| Marvin  | @izproxy-cl     | Gold (XAU/USD)   |
+| Marvin  | @izproxy-cl     | BTC (BTC/USD)    |
 | Alper   | @alperbildiren  | EUR/USD          |
 | Luis    | @Loojz          | Crude Oil (WTI)  |
 
-These series are economically linked: oil is priced in USD, gold reacts
-to USD strength, and EUR/USD reflects monetary policy. This makes them
-ideal for multivariate modeling in Part 3.
+These series mix traditional macro assets (oil, EUR/USD) with a digital asset (BTC), 
+allowing us to study both classical economic linkages and how cryptocurrencies behave 
+relative to fiat markets — a particularly interesting question for the multivariate 
+analysis in Part 3.
 
 ## Repository Structure
 
