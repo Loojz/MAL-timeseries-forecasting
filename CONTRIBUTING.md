@@ -10,7 +10,7 @@ We follow a simplified Gitflow model adapted to our 3-person team:
 - `develop` — integration branch (default)
 - `feature/arima-btc` — Marvin's univariate analysis
 - `feature/arima-eurusd` — Alper's univariate analysis
-- `feature/arima-oil` — Luis' univariate analysis
+- `feature/arima-gold` — Luis' univariate analysis
 - `feature/<shared-task>` — collaborative work
 
 ### Rules
@@ -24,7 +24,7 @@ We follow a simplified Gitflow model adapted to our 3-person team:
 
 | Type | Pattern | Example |
 |------|---------|---------|
-| Feature | feature/scope | feature/arima-oil |
+| Feature | feature/scope | feature/arima-gold |
 | Fix | fix/scope | fix/data-loader-encoding |
 | Documentation | docs/scope | docs/update-readme |
 | Setup | setup/scope | setup/initial-repo-structure |
