@@ -21,12 +21,12 @@ The work is structured in three parts:
 |---------|-----------------|------------------|
 | Marvin  | @izproxy-cl     | BTC (BTC/USD)    |
 | Alper   | @alperbildiren  | EUR/USD          |
-| Luis    | @Loojz          | Crude Oil (WTI)  |
+| Luis    | @Loojz          | Gold (XAU/USD)   |
 
-These series mix traditional macro assets (oil, EUR/USD) with a digital asset (BTC), 
+These series mix traditional macro assets (gold, EUR/USD) with a digital asset (BTC), 
 allowing us to study both classical economic linkages and how cryptocurrencies behave 
-relative to fiat markets — a particularly interesting question for the multivariate 
-analysis in Part 3.
+relative to fiat and commodity markets — a particularly interesting question for the 
+multivariate analysis in Part 3.
 
 ## Repository Structure
 
