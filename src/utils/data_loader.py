@@ -68,7 +68,9 @@ def load_series(
 
     if file_path.exists() and not force_refresh:
         print(f"[data_loader] Loading cached file: {file_path.name}")
-        return pd.read_csv(file_path, index_col=0, parse_dates=True)
+        # yfinance >=0.2 writes two metadata rows (Ticker, Date) before the data.
+        # skiprows=[1, 2] drops them so we get a clean DatetimeIndex + float columns.
+        return pd.read_csv(file_path, skiprows=[1, 2], index_col=0, parse_dates=True)
 
     print(f"[data_loader] Downloading {ticker} from Yahoo Finance ({start} to {end})...")
     df = yf.download(ticker, start=start, end=end, progress=False)
