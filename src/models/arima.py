@@ -577,3 +577,59 @@ def forecast_metrics(
 
     return {"MAE": round(mae, 4), "RMSE": round(rmse, 4),
             "MAPE": round(mape, 4), "MASE": round(mase, 4)}
+
+
+def simulate_random_walk_paths(
+    start_value: float,
+    sigma: float,
+    steps: int,
+    n_paths: int = 1000,
+    drift: float = 0.0,
+    seed: int = 42,
+) -> np.ndarray:
+    """
+    Simulate random walk paths for Monte-Carlo visualization.
+
+    Each path starts at `start_value` and evolves as:
+        y_{t+1} = y_t + drift + ε_t,   ε_t ~ N(0, sigma²)
+
+    With drift=0 (default) this is a pure random walk. The resulting
+    "spaghetti" of paths visualises the actual distribution of future
+    outcomes, complementing the analytical point forecast and CI.
+
+    Parameters
+    ----------
+    start_value : float
+        Starting value for every path (typically the last observed price).
+    sigma : float
+        Standard deviation of the per-step innovations.
+    steps : int
+        Number of time steps to simulate forward.
+    n_paths : int, optional
+        Number of independent paths to simulate. Default 1000.
+    drift : float, optional
+        Per-step drift term added to each innovation. Default 0.0.
+    seed : int, optional
+        Random seed for reproducibility. Default 42.
+
+    Returns
+    -------
+    np.ndarray
+        Shape (n_paths, steps + 1). Column 0 is `start_value` for all paths.
+        Rows are individual simulated trajectories.
+
+    Examples
+    --------
+    >>> from src.models.arima import simulate_random_walk_paths
+    >>> paths = simulate_random_walk_paths(3200.0, sigma=17.0, steps=10)
+    >>> paths.shape
+    (1000, 11)
+    """
+    rng         = np.random.default_rng(seed)
+    innovations = rng.normal(loc=drift, scale=sigma, size=(n_paths, steps))
+    cumulative  = np.cumsum(innovations, axis=1)
+    paths       = np.column_stack([
+        np.full(n_paths, start_value),
+        start_value + cumulative,
+    ])
+    return paths
