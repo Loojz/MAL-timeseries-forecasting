@@ -5,7 +5,9 @@ All functions here are designed to be reusable across team members' notebooks
 (Gold, BTC, EUR/USD). Import from src.utils.preprocessing.
 """
 
+import matplotlib.pyplot as plt
 import pandas as pd
+from statsmodels.graphics.tsaplots import plot_acf, plot_pacf
 from statsmodels.tsa.stattools import adfuller, kpss
 
 
@@ -122,3 +124,57 @@ def kpss_test(series: pd.Series, title: str = "") -> dict:
     print(f"{'=' * 50}\n")
 
     return output
+
+
+def plot_acf_pacf(
+    series: pd.Series,
+    lags: int = 40,
+    title: str | None = None,
+) -> plt.Figure:
+    """
+    Plot ACF and PACF side by side for a given time series.
+
+    Useful for identifying the MA order (q) from the ACF and the AR order (p)
+    from the PACF. The shaded blue band marks the 95% confidence interval —
+    lags inside the band are not statistically significant.
+
+    Parameters
+    ----------
+    series : pd.Series
+        The (stationary) time series to analyse. NaN values are dropped.
+    lags : int, optional
+        Number of lags to display. Default is 40.
+    title : str or None, optional
+        Overall figure title shown above both subplots.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> from src.utils.preprocessing import plot_acf_pacf
+    >>> plot_acf_pacf(gold_diff, lags=40, title="ACF und PACF — Gold (1. Differenz)")
+    """
+    fig, (ax_acf, ax_pacf) = plt.subplots(1, 2, figsize=(14, 5))
+
+    plot_acf(series.dropna(), lags=lags, ax=ax_acf, zero=False)
+    ax_acf.set_title("ACF (Autokorrelationsfunktion)", fontsize=12)
+    ax_acf.set_xlabel("Lag", fontsize=10)
+    ax_acf.set_ylabel("Korrelation", fontsize=10)
+    ax_acf.grid(True, linestyle="--", alpha=0.4)
+
+    # method="ywm" (Yule-Walker with bias correction) avoids spurious
+    # negative values at lag 1 that appear with the default OLS estimator
+    plot_pacf(series.dropna(), lags=lags, ax=ax_pacf, zero=False, method="ywm")
+    ax_pacf.set_title("PACF (Partielle Autokorrelationsfunktion)", fontsize=12)
+    ax_pacf.set_xlabel("Lag", fontsize=10)
+    ax_pacf.set_ylabel("Korrelation", fontsize=10)
+    ax_pacf.grid(True, linestyle="--", alpha=0.4)
+
+    if title:
+        fig.suptitle(title, fontsize=14, y=1.02)
+
+    plt.tight_layout()
+    plt.show()
+    return fig
