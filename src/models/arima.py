@@ -334,3 +334,246 @@ def plot_residual_diagnostics(
     plt.tight_layout()
     plt.show()
     return fig
+
+
+def make_forecast(
+    fitted_model: object,
+    steps: int = 10,
+    alpha: float = 0.05,
+) -> pd.DataFrame:
+    """
+    Generate a multi-step-ahead point forecast with confidence intervals.
+
+    Parameters
+    ----------
+    fitted_model : SARIMAXResultsWrapper
+        A model already fitted via fit_arima().
+    steps : int, optional
+        Number of future periods to forecast. Default is 10.
+    alpha : float, optional
+        Significance level for the confidence interval. Default is 0.05
+        (i.e. 95% confidence interval).
+
+    Returns
+    -------
+    pd.DataFrame
+        DatetimeIndex (business days from last training date) with columns:
+        forecast, lower_ci, upper_ci, std_err.
+
+    Examples
+    --------
+    >>> from src.models.arima import fit_arima, make_forecast
+    >>> model = fit_arima(gold["Close"], order=(0, 1, 1))
+    >>> fc = make_forecast(model, steps=10, alpha=0.05)
+    >>> fc.round(2)
+    """
+    fc_obj   = fitted_model.get_forecast(steps=steps)
+    pred     = fc_obj.predicted_mean
+    ci       = fc_obj.conf_int(alpha=alpha)
+    se       = fc_obj.se_mean
+
+    # Build a business-day DatetimeIndex from the last fitted date
+    last_date   = fitted_model.fittedvalues.index[-1]
+    future_idx  = pd.bdate_range(start=last_date, periods=steps + 1, freq="B")[1:]
+
+    df = pd.DataFrame({
+        "forecast": pred.values,
+        "lower_ci": ci.iloc[:, 0].values,
+        "upper_ci": ci.iloc[:, 1].values,
+        "std_err":  se.values,
+    }, index=future_idx)
+    return df
+
+
+def plot_forecast(
+    history: pd.Series,
+    forecast_df: pd.DataFrame,
+    title: str | None = None,
+    n_history: int = 180,
+) -> plt.Figure:
+    """
+    Plot historical prices and a single-model forecast with confidence band.
+
+    Parameters
+    ----------
+    history : pd.Series
+        Full historical price series with DatetimeIndex.
+    forecast_df : pd.DataFrame
+        Output of make_forecast() — must have columns forecast, lower_ci, upper_ci.
+    title : str or None, optional
+        Figure title.
+    n_history : int, optional
+        Number of historical periods to show before the forecast start. Default 180.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> from src.models.arima import make_forecast, plot_forecast
+    >>> fc = make_forecast(model, steps=10)
+    >>> plot_forecast(gold["Close"], fc, title="10-Tage-Forecast")
+    """
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Last n_history observations
+    hist_tail = history.iloc[-n_history:]
+    ax.plot(hist_tail.index, hist_tail.values,
+            color="black", lw=1.0, label="Historische Werte")
+
+    # Point forecast
+    ax.plot(forecast_df.index, forecast_df["forecast"],
+            color="#5A7FA8", lw=1.8, ls="--", label="Punktforecast")
+
+    # Confidence band
+    ax.fill_between(forecast_df.index,
+                    forecast_df["lower_ci"], forecast_df["upper_ci"],
+                    color="#5A7FA8", alpha=0.25, label="95%-Konfidenzintervall")
+
+    # Vertical line at forecast start
+    ax.axvline(forecast_df.index[0], color="gray", lw=0.9, ls=":", alpha=0.8)
+
+    ax.set_xlabel("Datum", fontsize=11)
+    ax.set_ylabel("Goldpreis (USD)", fontsize=11)
+    ax.grid(True, ls="--", alpha=0.4)
+    ax.legend(fontsize=10)
+    if title:
+        ax.set_title(title, fontsize=14, pad=12)
+
+    plt.tight_layout()
+    plt.show()
+    return fig
+
+
+def plot_forecast_comparison(
+    history: pd.Series,
+    forecast_dfs_dict: dict[str, pd.DataFrame],
+    title: str | None = None,
+    n_history: int = 180,
+) -> plt.Figure:
+    """
+    Plot historical prices and multiple model forecasts on the same axes.
+
+    Designed for the Option C narrative: comparing ARIMA(0,1,1) against the
+    ARIMA(0,1,0) Random Walk benchmark on the same chart.
+
+    Parameters
+    ----------
+    history : pd.Series
+        Full historical price series with DatetimeIndex.
+    forecast_dfs_dict : dict of str -> pd.DataFrame
+        Mapping from model label to make_forecast() output.
+        E.g. {"ARIMA(0,1,1)": fc1, "ARIMA(0,1,0)": fc2}.
+    title : str or None, optional
+        Figure title.
+    n_history : int, optional
+        Number of historical periods to show before forecast start. Default 180.
+
+    Returns
+    -------
+    matplotlib.figure.Figure
+
+    Examples
+    --------
+    >>> from src.models.arima import plot_forecast_comparison
+    >>> plot_forecast_comparison(gold["Close"],
+    ...     {"ARIMA(0,1,1)": fc1, "ARIMA(0,1,0)": fc2},
+    ...     title="Forecast-Vergleich")
+    """
+    colors = ["#5A7FA8", "#D94F3D", "#3DAF6A", "#A85A7F"]
+
+    fig, ax = plt.subplots(figsize=(12, 6))
+
+    # Historical tail
+    hist_tail = history.iloc[-n_history:]
+    ax.plot(hist_tail.index, hist_tail.values,
+            color="black", lw=1.0, label="Historische Werte")
+
+    # One set of bands + line per model
+    for (label, fc_df), color in zip(forecast_dfs_dict.items(), colors):
+        ax.plot(fc_df.index, fc_df["forecast"],
+                color=color, lw=1.8, ls="--", label=f"{label} Punktforecast")
+        ax.fill_between(fc_df.index, fc_df["lower_ci"], fc_df["upper_ci"],
+                        color=color, alpha=0.15,
+                        label=f"{label} 95%-KI")
+
+    # Vertical line at forecast start (use first model's index)
+    first_fc = next(iter(forecast_dfs_dict.values()))
+    ax.axvline(first_fc.index[0], color="gray", lw=0.9, ls=":", alpha=0.8)
+
+    ax.set_xlabel("Datum", fontsize=11)
+    ax.set_ylabel("Goldpreis (USD)", fontsize=11)
+    ax.grid(True, ls="--", alpha=0.4)
+    ax.legend(fontsize=9)
+    if title:
+        ax.set_title(title, fontsize=14, pad=12)
+
+    plt.tight_layout()
+    plt.show()
+    return fig
+
+
+def forecast_metrics(
+    actual: np.ndarray,
+    predicted: np.ndarray,
+    training_series: np.ndarray | None = None,
+) -> dict:
+    """
+    Compute standard point-forecast accuracy metrics.
+
+    Parameters
+    ----------
+    actual : array-like
+        True observed values (test set).
+    predicted : array-like
+        Model point forecasts aligned with `actual`.
+    training_series : array-like or None, optional
+        Training data used to scale MASE. If provided, the naive benchmark
+        is the mean absolute one-step difference on the training series.
+        If None, the naive benchmark is computed from `actual` itself
+        (less reliable but avoids needing training data).
+
+    Returns
+    -------
+    dict
+        Keys: MAE, RMSE, MAPE, MASE.
+
+    Notes
+    -----
+    - MAPE is in percent.
+    - MASE < 1 means the model beats the naive random-walk baseline.
+    - Division-by-zero in MASE (constant training series) is caught and
+      returns NaN.
+
+    Examples
+    --------
+    >>> from src.models.arima import forecast_metrics
+    >>> metrics = forecast_metrics(gold_test.values, fc["forecast"].values,
+    ...                            training_series=gold_train.values)
+    """
+    actual    = np.asarray(actual,    dtype=float)
+    predicted = np.asarray(predicted, dtype=float)
+
+    errors = actual - predicted
+    abs_err = np.abs(errors)
+
+    mae  = float(np.mean(abs_err))
+    rmse = float(np.sqrt(np.mean(errors ** 2)))
+    mape = float(np.mean(np.abs(errors / actual)) * 100)
+
+    # MASE: scale by mean abs one-step difference on training data (naive forecast)
+    try:
+        if training_series is not None:
+            ts = np.asarray(training_series, dtype=float)
+            naive_scale = np.mean(np.abs(np.diff(ts)))
+        else:
+            naive_scale = np.mean(np.abs(np.diff(actual)))
+        if naive_scale == 0:
+            raise ZeroDivisionError("Constant series — MASE undefined.")
+        mase = float(mae / naive_scale)
+    except Exception:  # noqa: BLE001
+        mase = float("nan")
+
+    return {"MAE": round(mae, 4), "RMSE": round(rmse, 4),
+            "MAPE": round(mape, 4), "MASE": round(mase, 4)}
