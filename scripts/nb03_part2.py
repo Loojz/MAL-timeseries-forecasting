@@ -223,12 +223,13 @@ for lag in range(11):
 
 ic_df = pd.DataFrame(ic_rows)
 
-# Mark winners
+# Mark winners — use a display copy (object dtype) to allow string labels
+ic_display = ic_df.copy().astype({"AIC": object, "BIC": object, "HQIC": object})
 for crit in ["AIC", "BIC", "HQIC"]:
     best = ic_df[crit].idxmin()
-    ic_df.loc[best, crit] = f"★ {ic_df.loc[best, crit]}"
+    ic_display.loc[best, crit] = f"★ {ic_df.loc[best, crit]}"
 
-ic_df\
+print(ic_display.to_string(index=False))\
 """))
 
 new_cells.append(md("""\
@@ -508,7 +509,7 @@ plt.show()\
 new_cells.append(code("""\
 # FEVD table at h = 10
 fevd_at_10 = pd.DataFrame(
-    fevd.decomp[9],          # period 10 = index 9 (0-based)
+    fevd.decomp[:, 9, :],    # shape (n_eq, periods, n_eq) → h=10 = index 9
     index=df.columns,
     columns=df.columns,
 ).round(4)
