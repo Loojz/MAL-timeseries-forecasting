@@ -13,6 +13,47 @@ import pandas as pd
 import yfinance as yf
 
 
+def _fix_index(df: pd.DataFrame) -> pd.DataFrame:
+    """Normalise a yfinance DataFrame to a clean DatetimeIndex + float columns.
+
+    yfinance >= 0.2.x returns MultiLevel column headers.  After a CSV
+    round-trip those extra header rows ('Ticker', 'Date') land as ordinary
+    data rows and the index becomes a plain string Index.  This helper
+    handles both the live-download case and the cached-CSV case:
+
+    Live download
+        columns is a pd.MultiIndex like ('Close', 'GC=F'), ('High', 'GC=F')…
+        → flatten to first level: 'Close', 'High', …
+        index is already a DatetimeIndex — keep it.
+
+    Cached CSV
+        columns are plain strings (first CSV header row 'Close', 'High', …)
+        index is a plain str Index containing 'Ticker', 'Date', '2015-01-02', …
+        → drop non-date rows, parse the rest as DatetimeIndex.
+    """
+    df = df.copy()
+
+    # 1. Flatten MultiLevel columns (live download)
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+
+    # 2. Normalise column names to plain strings
+    df.columns = [str(c) for c in df.columns]
+
+    # 3. Convert index to DatetimeIndex; non-parseable rows ('Ticker', 'Date')
+    #    become NaT and are dropped.  format="ISO8601" avoids the pandas 2.x
+    #    "Could not infer format" UserWarning for standard YYYY-MM-DD strings.
+    df.index = pd.to_datetime(df.index, format="ISO8601", errors="coerce")
+    df = df.loc[df.index.notna()]
+
+    # 4. Coerce all value columns to float (spurious string rows may have
+    #    forced object dtype during CSV read)
+    df = df.apply(pd.to_numeric, errors="coerce")
+
+    df.index.name = "Date"
+    return df
+
+
 # ---------------------------------------------------------------------------
 # Frozen date range — DO NOT change without team agreement
 # ---------------------------------------------------------------------------
@@ -68,7 +109,8 @@ def load_series(
 
     if file_path.exists() and not force_refresh:
         print(f"[data_loader] Loading cached file: {file_path.name}")
-        return pd.read_csv(file_path, index_col=0, parse_dates=True)
+        raw = pd.read_csv(file_path, index_col=0)
+        return _fix_index(raw)
 
     print(f"[data_loader] Downloading {ticker} from Yahoo Finance ({start} to {end})...")
     df = yf.download(ticker, start=start, end=end, progress=False)
@@ -79,6 +121,8 @@ def load_series(
             f"Check the ticker symbol or your internet connection."
         )
 
+    # Normalise before saving so the CSV always has clean single-level headers
+    df = _fix_index(df)
     df.to_csv(file_path)
     print(f"[data_loader] Saved to: {file_path.name}")
     return df

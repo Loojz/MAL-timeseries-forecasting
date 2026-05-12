@@ -96,19 +96,10 @@ np.random.seed(42)
 
 from src.utils.data_loader import load_series
 
-def _fix_index(df):
-    # Fix multi-level CSV header: convert index to DatetimeIndex, values to float.
-    df = df.copy()
-    df.index = pd.to_datetime(df.index, errors="coerce")
-    df = df[~df.index.isna()]
-    df = df.apply(pd.to_numeric, errors="coerce")
-    df.index.name = "Date"
-    return df
-
 # Load all three series (frozen 2015-01-01 to 2025-05-04)
-gold   = _fix_index(load_series("GC=F"))
-btc    = _fix_index(load_series("BTC-USD"))
-eurusd = _fix_index(load_series("EURUSD=X"))
+gold   = load_series("GC=F")
+btc    = load_series("BTC-USD")
+eurusd = load_series("EURUSD=X")
 
 print(f"Gold   : {len(gold):,} Beobachtungen  "
       f"({gold.index[0].date()} bis {gold.index[-1].date()})")
