@@ -44,6 +44,28 @@ multivariate analysis in Part 3.
     source .venv/bin/activate
     pip install -r requirements.txt
 
+### TimeGPT-2.1 (optional)
+
+To enable TimeGPT-2.1 forecasts in the Research tab:
+
+1. Copy the example env file:
+   ```bash
+   cp .env.example .env
+   ```
+
+2. Open `.env` and add your API key:
+   ```
+   NIXTLA_API_KEY=your_key_here
+   ```
+
+3. Restart the app — TimeGPT-2.1 activates automatically:
+   ```bash
+   streamlit run app.py
+   ```
+
+Get a free API key at [dashboard.nixtla.io](https://dashboard.nixtla.io).
+Available models: `timegpt-2.1` (recommended), `timegpt-2-pro` (highest accuracy), `timegpt-2-mini` (fastest).
+
 ## Contributing
 
 See CONTRIBUTING.md for branching strategy, commit conventions,
