@@ -1,3 +1,8 @@
+# Load environment variables from .env file at project root
+# Must be called before any other imports that use env vars
+from dotenv import load_dotenv
+load_dotenv()
+
 import streamlit as st
 
 st.set_page_config(
