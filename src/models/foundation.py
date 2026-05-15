@@ -163,6 +163,27 @@ def timegpt_forecast(
             "y":  series.values,
         }).dropna()
 
+        # Nixtla requires a perfectly regular frequency — no gaps allowed.
+        # Financial series have holes on public holidays (e.g. Christmas)
+        # that fall on weekdays.  Reindex to the full "B" range and fill
+        # holiday gaps with 0.0 (no trading → no log-return).
+        df = (
+            df
+            .drop_duplicates(subset="ds")
+            .sort_values("ds")
+            .set_index("ds")
+            .reindex(
+                pd.date_range(
+                    start=df["ds"].iloc[0],
+                    end=df["ds"].iloc[-1],
+                    freq=freq,
+                )
+            )
+            .fillna(0.0)
+            .reset_index()
+            .rename(columns={"index": "ds"})
+        )
+
         # Run forecast with confidence intervals
         fc = client.forecast(
             df=df,
