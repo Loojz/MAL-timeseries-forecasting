@@ -2,7 +2,7 @@ import pandas as pd
 import requests
 
 
-FRED_API_KEY = "2f1231bb70179d40a1d28f8dbc80feb4"
+FRED_API_KEY = "ec8cdd069ddb1dd1eecef297ad1871f9"
 
 FRED_TICKERS = {
     "EURUSD=X": "DEXUSEU",
