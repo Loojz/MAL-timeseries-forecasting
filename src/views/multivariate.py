@@ -720,3 +720,186 @@ def render(zeitraum: str, zeitraum_label: str):
                         )
             except Exception as e:
                 st.warning(f"Berechnung nicht möglich: {str(e)}")
+
+        # ─────────────────────────────────────────────────────────────────────
+        # Expander 7 — Foundation Models (Chronos + TimeGPT)
+        # ─────────────────────────────────────────────────────────────────────
+        st.divider()
+        st.markdown("### 🤖 Foundation Models — Zero-Shot Forecasting")
+        st.markdown("""
+Foundation Models sind große vortrainierte neuronale Netze, die ohne
+Feintuning auf neuen Zeitreihen Prognosen erstellen können
+(**Zero-Shot Learning**). Wir testen zwei Modelle:
+
+| Modell | Anbieter | Typ | Besonderheit |
+|--------|----------|-----|--------------|
+| **Chronos** | Amazon | Lokal, kostenlos | T5-Transformer, auf Millionen Zeitreihen trainiert |
+| **TimeGPT** | Nixtla | API-basiert | Speziell für Zeitreihen entwickelt |
+        """)
+
+        with st.expander("7️⃣ Foundation Models (Chronos + TimeGPT)", expanded=False):
+            try:
+                import os
+                from src.models.foundation import (
+                    chronos_forecast, timegpt_forecast, evaluate_foundation_model,
+                )
+
+                if _df is None:
+                    raise ValueError(
+                        "Log-Returns DataFrame nicht verfügbar — "
+                        "bitte Seite neu laden."
+                    )
+
+                # ── Model size selector ───────────────────────────────────────
+                model_size = st.selectbox(
+                    "Chronos Modellgröße",
+                    options=["tiny", "mini", "small"],
+                    index=0,
+                    help="tiny = schnellste (~80 MB), small = genauer (~300 MB)",
+                )
+
+                foundation_rows = []
+
+                # ── Chronos — one plot per asset ──────────────────────────────
+                st.markdown("#### 📡 Chronos (Amazon) — Lokal")
+                st.caption(
+                    f"Chronos wird beim ersten Aufruf heruntergeladen "
+                    f"(~80 MB für '{model_size}'). Bitte warten."
+                )
+
+                for asset_name, color in ASSET_FARBEN.items():
+                    anzeige      = ANZEIGE_NAMEN.get(asset_name, asset_name)
+                    asset_logret = _df[asset_name].dropna()
+
+                    # 70/30 split for evaluation
+                    split     = int(len(asset_logret) * 0.70)
+                    train_ret = asset_logret.iloc[:split]
+                    test_ret  = asset_logret.iloc[split:]
+
+                    st.markdown(f"**{anzeige}**")
+
+                    with st.spinner(f"Chronos berechnet {anzeige}..."):
+                        chronos_res = chronos_forecast(
+                            train_ret,
+                            steps=len(test_ret),
+                            model_size=model_size,
+                            n_samples=20,
+                            seed=42,
+                        )
+
+                    if "fehler" in chronos_res:
+                        st.warning(f"Chronos ({anzeige}): {chronos_res['fehler']}")
+                        continue
+
+                    # Evaluate against test set
+                    met = evaluate_foundation_model(
+                        chronos_res, test_ret,
+                        f"Chronos-{model_size} ({anzeige})",
+                    )
+                    foundation_rows.append({
+                        "Asset":  anzeige,
+                        "Modell": f"Chronos-{model_size}",
+                        "MSE":    met.get("MSE", "–"),
+                        "RMSE":   met.get("RMSE", "–"),
+                        "MAE":    met.get("MAE", "–"),
+                    })
+
+                    # Plot: last 60 history points + full test-period forecast
+                    hist_vals = asset_logret.iloc[-60:].values * 100
+                    hist_x    = list(range(len(hist_vals)))
+                    fc_len    = len(chronos_res["median"])
+                    fc_x      = list(range(len(hist_vals), len(hist_vals) + fc_len))
+
+                    fig_c = go.Figure()
+                    fig_c.add_trace(go.Scatter(
+                        x=hist_x, y=hist_vals,
+                        name="Historisch",
+                        line=dict(color=color, width=2),
+                    ))
+                    fig_c.add_trace(go.Scatter(
+                        x=fc_x,
+                        y=chronos_res["median"].values * 100,
+                        name="Chronos Median",
+                        line=dict(color=T["up"], width=2, dash="dash"),
+                    ))
+                    fig_c.add_trace(go.Scatter(
+                        x=fc_x + fc_x[::-1],
+                        y=list(chronos_res["upper_95"].values * 100)
+                          + list(chronos_res["lower_95"].values[::-1] * 100),
+                        fill="toself",
+                        fillcolor="rgba(34,197,94,0.10)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        name="95%-KI",
+                    ))
+                    fig_c.add_hline(
+                        y=0, line_width=1, line_dash="dot",
+                        line_color=T["border"],
+                    )
+                    fig_c.update_layout(**base_layout(
+                        title=f"Chronos — {anzeige} (Zero-Shot, Test-Periode)",
+                        yaxis_title="Log-Return (%)",
+                        height=300,
+                    ))
+                    st.plotly_chart(fig_c, use_container_width=True)
+
+                # ── TimeGPT — API-based ───────────────────────────────────────
+                st.divider()
+                st.markdown("#### 🌐 TimeGPT (Nixtla) — API-basiert")
+
+                nixtla_key = os.environ.get("NIXTLA_API_KEY")
+                if not nixtla_key:
+                    st.info(
+                        "**TimeGPT API-Key nicht gefunden.**\n\n"
+                        "Setze die Umgebungsvariable `NIXTLA_API_KEY` und "
+                        "starte die App neu:\n\n"
+                        "```bash\nexport NIXTLA_API_KEY=dein_key_hier\n"
+                        "streamlit run app.py\n```"
+                    )
+                else:
+                    for asset_name in ASSET_FARBEN:
+                        anzeige      = ANZEIGE_NAMEN.get(asset_name, asset_name)
+                        asset_logret = _df[asset_name].dropna()
+                        split        = int(len(asset_logret) * 0.70)
+                        train_ret    = asset_logret.iloc[:split]
+                        test_ret     = asset_logret.iloc[split:]
+
+                        st.markdown(f"**{anzeige}**")
+                        with st.spinner(f"TimeGPT berechnet {anzeige}..."):
+                            tgpt_res = timegpt_forecast(
+                                train_ret,
+                                steps=len(test_ret),
+                                api_key=nixtla_key,
+                            )
+
+                        if "fehler" in tgpt_res:
+                            st.warning(f"TimeGPT ({anzeige}): {tgpt_res['fehler']}")
+                            continue
+
+                        met_t = evaluate_foundation_model(
+                            tgpt_res, test_ret,
+                            f"TimeGPT ({anzeige})",
+                        )
+                        foundation_rows.append({
+                            "Asset":  anzeige,
+                            "Modell": "TimeGPT",
+                            "MSE":    met_t.get("MSE", "–"),
+                            "RMSE":   met_t.get("RMSE", "–"),
+                            "MAE":    met_t.get("MAE", "–"),
+                        })
+
+                # ── Summary table ─────────────────────────────────────────────
+                if foundation_rows:
+                    st.divider()
+                    st.markdown("**Foundation Models — Evaluationsübersicht:**")
+                    st.dataframe(
+                        pd.DataFrame(foundation_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        "MAPE ausgeschlossen — bei Log-Renditen nahe Null "
+                        "führt Division durch ~0 zu verzerrten Werten."
+                    )
+
+            except Exception as e:
+                st.warning(f"Foundation Models konnten nicht geladen werden: {e}")
