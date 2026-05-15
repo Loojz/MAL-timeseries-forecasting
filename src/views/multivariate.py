@@ -879,33 +879,47 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         f"Evaluation gegen die ersten {CHRONOS_HORIZON} Tage des Test-Sets."
                     )
 
-                # ── TimeGPT — API-based ───────────────────────────────────────
+                # ── TimeGPT-2.1 ───────────────────────────────────────────────
                 st.divider()
-                st.markdown("#### 🌐 TimeGPT (Nixtla) — API-basiert")
+                st.markdown("#### 🌐 TimeGPT-2.1 (Nixtla) — API-basiert")
 
                 nixtla_key = os.environ.get("NIXTLA_API_KEY")
                 if not nixtla_key:
                     st.info(
                         "**TimeGPT API-Key nicht gefunden.**\n\n"
-                        "Setze die Umgebungsvariable `NIXTLA_API_KEY` und "
-                        "starte die App neu:\n\n"
-                        "```bash\nexport NIXTLA_API_KEY=dein_key_hier\n"
-                        "streamlit run app.py\n```"
+                        "Lege eine `.env` Datei im Projektordner an:\n\n"
+                        "```\nNIXTLA_API_KEY=dein_key_hier\n```\n\n"
+                        "Dann die App neu starten. "
+                        "API-Key erhalten: [dashboard.nixtla.io](https://dashboard.nixtla.io)"
                     )
                 else:
-                    for asset_name in ASSET_FARBEN:
+                    timegpt_model = st.selectbox(
+                        "TimeGPT Modell",
+                        options=["timegpt-2.1", "timegpt-2-pro", "timegpt-2-mini"],
+                        index=0,
+                        help=(
+                            "timegpt-2.1 = empfohlen | "
+                            "timegpt-2-pro = höchste Genauigkeit | "
+                            "timegpt-2-mini = schnellste"
+                        ),
+                    )
+
+                    for asset_name, color in ASSET_FARBEN.items():
                         anzeige      = ANZEIGE_NAMEN.get(asset_name, asset_name)
                         asset_logret = _df[asset_name].dropna()
                         split        = int(len(asset_logret) * 0.70)
                         train_ret    = asset_logret.iloc[:split]
                         test_ret     = asset_logret.iloc[split:]
+                        y_eval       = test_ret.iloc[:CHRONOS_HORIZON]
 
                         st.markdown(f"**{anzeige}**")
-                        with st.spinner(f"TimeGPT berechnet {anzeige}..."):
+
+                        with st.spinner(f"TimeGPT-2.1 berechnet {anzeige}..."):
                             tgpt_res = timegpt_forecast(
                                 train_ret,
-                                steps=CHRONOS_HORIZON,   # same 10-step horizon
+                                steps=CHRONOS_HORIZON,
                                 api_key=nixtla_key,
+                                model=timegpt_model,
                             )
 
                         if "fehler" in tgpt_res:
@@ -914,16 +928,95 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
 
                         # Evaluate against first CHRONOS_HORIZON test days
                         met_t = evaluate_foundation_model(
-                            tgpt_res, test_ret.iloc[:CHRONOS_HORIZON],
-                            f"TimeGPT ({anzeige})",
+                            tgpt_res, y_eval,
+                            f"TimeGPT-2.1 ({anzeige})"
                         )
                         foundation_rows.append({
                             "Asset":  anzeige,
-                            "Modell": "TimeGPT",
-                            "MSE":    met_t.get("MSE", "–"),
+                            "Modell": "TimeGPT-2.1",
+                            "MSE":    met_t.get("MSE",  "–"),
                             "RMSE":   met_t.get("RMSE", "–"),
-                            "MAE":    met_t.get("MAE", "–"),
+                            "MAE":    met_t.get("MAE",  "–"),
                         })
+
+                        # Plot — same style as Chronos
+                        full_series = asset_logret
+                        hist_vals   = full_series.iloc[-60:].values * 100
+                        hist_x      = list(range(len(hist_vals)))
+                        fc_x        = list(range(
+                            len(hist_vals),
+                            len(hist_vals) + CHRONOS_HORIZON
+                        ))
+
+                        fig_t = go.Figure()
+
+                        # History
+                        fig_t.add_trace(go.Scatter(
+                            x=hist_x, y=hist_vals,
+                            name="Historisch (letzte 60 Tage)",
+                            line=dict(color=color, width=2),
+                        ))
+
+                        # TimeGPT median
+                        fig_t.add_trace(go.Scatter(
+                            x=fc_x,
+                            y=tgpt_res["median"].values * 100,
+                            name=f"TimeGPT-2.1 Median ({CHRONOS_HORIZON} Tage)",
+                            line=dict(color=T["purple"], width=2, dash="dash"),
+                            mode="lines+markers",
+                            marker=dict(size=5),
+                        ))
+
+                        # 80% CI
+                        fig_t.add_trace(go.Scatter(
+                            x=fc_x + fc_x[::-1],
+                            y=list(tgpt_res["upper_80"].values * 100)
+                              + list(tgpt_res["lower_80"].values[::-1] * 100),
+                            fill="toself",
+                            fillcolor="rgba(139,92,246,0.20)",
+                            line=dict(color="rgba(0,0,0,0)"),
+                            name="80%-KI",
+                        ))
+
+                        # 95% CI
+                        fig_t.add_trace(go.Scatter(
+                            x=fc_x + fc_x[::-1],
+                            y=list(tgpt_res["upper_95"].values * 100)
+                              + list(tgpt_res["lower_95"].values[::-1] * 100),
+                            fill="toself",
+                            fillcolor="rgba(139,92,246,0.10)",
+                            line=dict(color="rgba(0,0,0,0)"),
+                            name="95%-KI",
+                        ))
+
+                        fig_t.add_hline(
+                            y=0, line_width=1, line_dash="dot",
+                            line_color="rgba(255,255,255,0.3)",
+                        )
+                        fig_t.add_vline(
+                            x=len(hist_vals) - 0.5,
+                            line_width=1, line_dash="dash",
+                            line_color="rgba(255,255,255,0.4)",
+                            annotation_text="Forecast Start",
+                            annotation_position="top left",
+                        )
+                        fig_t.update_layout(
+                            **base_layout(
+                                title=(
+                                    f"TimeGPT-2.1 — {anzeige} | "
+                                    f"{CHRONOS_HORIZON}-Tage Zero-Shot Forecast"
+                                ),
+                                yaxis_title="Log-Return (%)",
+                                height=320,
+                            )
+                        )
+                        st.plotly_chart(fig_t, use_container_width=True)
+                        st.caption(
+                            f"TimeGPT-2.1 forecasted {CHRONOS_HORIZON} Handelstage "
+                            f"vorwärts (Zero-Shot). "
+                            f"Evaluation gegen die ersten {CHRONOS_HORIZON} Tage "
+                            f"des Test-Sets."
+                        )
 
                 # ── Summary table ─────────────────────────────────────────────
                 if foundation_rows:

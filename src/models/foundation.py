@@ -97,10 +97,12 @@ def timegpt_forecast(
     steps: int = 10,
     api_key: str | None = None,
     freq: str = "B",
+    model: str = "timegpt-2.1",
 ) -> dict:
     """
-    Zero-shot forecast using TimeGPT via Nixtla API.
+    Zero-shot forecast using TimeGPT-2.1 via Nixtla API.
     Requires NIXTLA_API_KEY environment variable or api_key parameter.
+    Uses the TimeGPT-2 family base URL (api-preview.nixtla.io).
 
     Parameters
     ----------
@@ -112,6 +114,12 @@ def timegpt_forecast(
         Nixtla API key. Falls back to NIXTLA_API_KEY env var.
     freq : str
         Pandas frequency string. "B" = business days.
+    model : str
+        TimeGPT model to use. Options:
+        - "timegpt-2.1"     (latest, recommended)
+        - "timegpt-2-pro"   (highest accuracy)
+        - "timegpt-2-mini"  (fastest)
+        - "timegpt-2-lab"   (experimental)
 
     Returns
     -------
@@ -126,14 +134,21 @@ def timegpt_forecast(
         return {
             "fehler": (
                 "NIXTLA_API_KEY nicht gesetzt.\n"
-                "Setzen: export NIXTLA_API_KEY=dein_key"
+                "Lege eine .env Datei im Projektordner an:\n"
+                "NIXTLA_API_KEY=dein_key_hier"
             )
         }
 
     try:
         from nixtla import NixtlaClient
-        client = NixtlaClient(api_key=key)
 
+        # TimeGPT-2 family requires the preview base URL
+        client = NixtlaClient(
+            base_url="https://api-preview.nixtla.io",
+            api_key=key,
+        )
+
+        # Build DataFrame in Nixtla format
         if isinstance(series.index, pd.DatetimeIndex):
             dates = series.index
         else:
@@ -143,30 +158,46 @@ def timegpt_forecast(
                 freq=freq,
             )
 
-        df = pd.DataFrame({"ds": dates, "y": series.values}).dropna()
+        df = pd.DataFrame({
+            "ds": dates,
+            "y":  series.values,
+        }).dropna()
 
+        # Run forecast with confidence intervals
         fc = client.forecast(
-            df=df, h=steps, freq=freq,
-            time_col="ds", target_col="y",
+            df=df,
+            h=steps,
+            freq=freq,
+            time_col="ds",
+            target_col="y",
+            model=model,
             level=[80, 95],
         )
 
         return {
             "median":      pd.Series(fc["TimeGPT"].values),
-            "lower_80":    pd.Series(fc.get("TimeGPT-lo-80", fc["TimeGPT"]).values),
-            "upper_80":    pd.Series(fc.get("TimeGPT-hi-80", fc["TimeGPT"]).values),
-            "lower_95":    pd.Series(fc.get("TimeGPT-lo-95", fc["TimeGPT"]).values),
-            "upper_95":    pd.Series(fc.get("TimeGPT-hi-95", fc["TimeGPT"]).values),
+            "lower_80":    pd.Series(
+                fc.get("TimeGPT-lo-80", fc["TimeGPT"]).values
+            ),
+            "upper_80":    pd.Series(
+                fc.get("TimeGPT-hi-80", fc["TimeGPT"]).values
+            ),
+            "lower_95":    pd.Series(
+                fc.get("TimeGPT-lo-95", fc["TimeGPT"]).values
+            ),
+            "upper_95":    pd.Series(
+                fc.get("TimeGPT-hi-95", fc["TimeGPT"]).values
+            ),
             "forecast_df": fc,
-            "modell":      "TimeGPT",
+            "modell":      "TimeGPT-2.1",
             "schritte":    steps,
         }
 
     except ImportError:
         return {
             "fehler": (
-                "nixtla nicht installiert.\n"
-                "Installieren: pip install nixtla"
+                "nixtla nicht installiert oder Version zu alt.\n"
+                "Installieren: pip install 'nixtla>=0.7.0'"
             )
         }
     except Exception as e:
