@@ -758,6 +758,9 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                     help="tiny = schnellste (~80 MB), small = genauer (~300 MB)",
                 )
 
+                # Short horizon — Chronos is optimised for 10-50 steps, not 780
+                CHRONOS_HORIZON = 10
+
                 foundation_rows = []
 
                 # ── Chronos — one plot per asset ──────────────────────────────
@@ -771,17 +774,18 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                     anzeige      = ANZEIGE_NAMEN.get(asset_name, asset_name)
                     asset_logret = _df[asset_name].dropna()
 
-                    # 70/30 split for evaluation
+                    # 70/30 split — evaluate only on first CHRONOS_HORIZON test days
                     split     = int(len(asset_logret) * 0.70)
                     train_ret = asset_logret.iloc[:split]
                     test_ret  = asset_logret.iloc[split:]
+                    y_eval    = test_ret.iloc[:CHRONOS_HORIZON]
 
                     st.markdown(f"**{anzeige}**")
 
                     with st.spinner(f"Chronos berechnet {anzeige}..."):
                         chronos_res = chronos_forecast(
                             train_ret,
-                            steps=len(test_ret),
+                            steps=CHRONOS_HORIZON,
                             model_size=model_size,
                             n_samples=20,
                             seed=42,
@@ -791,9 +795,9 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         st.warning(f"Chronos ({anzeige}): {chronos_res['fehler']}")
                         continue
 
-                    # Evaluate against test set
+                    # Evaluate against the first CHRONOS_HORIZON test days
                     met = evaluate_foundation_model(
-                        chronos_res, test_ret,
+                        chronos_res, y_eval,
                         f"Chronos-{model_size} ({anzeige})",
                     )
                     foundation_rows.append({
@@ -804,24 +808,43 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         "MAE":    met.get("MAE", "–"),
                     })
 
-                    # Plot: last 60 history points + full test-period forecast
+                    # Plot: last 60 days of history + CHRONOS_HORIZON forecast steps
                     hist_vals = asset_logret.iloc[-60:].values * 100
                     hist_x    = list(range(len(hist_vals)))
-                    fc_len    = len(chronos_res["median"])
-                    fc_x      = list(range(len(hist_vals), len(hist_vals) + fc_len))
+                    fc_x      = list(range(len(hist_vals),
+                                           len(hist_vals) + CHRONOS_HORIZON))
 
                     fig_c = go.Figure()
+
+                    # Historical log-returns
                     fig_c.add_trace(go.Scatter(
                         x=hist_x, y=hist_vals,
-                        name="Historisch",
+                        name="Historisch (letzte 60 Tage)",
                         line=dict(color=color, width=2),
                     ))
+
+                    # Chronos median with markers
                     fig_c.add_trace(go.Scatter(
                         x=fc_x,
                         y=chronos_res["median"].values * 100,
-                        name="Chronos Median",
+                        name=f"Chronos Median ({CHRONOS_HORIZON} Tage)",
                         line=dict(color=T["up"], width=2, dash="dash"),
+                        mode="lines+markers",
+                        marker=dict(size=5),
                     ))
+
+                    # 80% CI (inner band)
+                    fig_c.add_trace(go.Scatter(
+                        x=fc_x + fc_x[::-1],
+                        y=list(chronos_res["upper_80"].values * 100)
+                          + list(chronos_res["lower_80"].values[::-1] * 100),
+                        fill="toself",
+                        fillcolor="rgba(34,197,94,0.20)",
+                        line=dict(color="rgba(0,0,0,0)"),
+                        name="80%-KI",
+                    ))
+
+                    # 95% CI (outer band)
                     fig_c.add_trace(go.Scatter(
                         x=fc_x + fc_x[::-1],
                         y=list(chronos_res["upper_95"].values * 100)
@@ -831,16 +854,30 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         line=dict(color="rgba(0,0,0,0)"),
                         name="95%-KI",
                     ))
+
+                    # Zero line and forecast boundary marker
                     fig_c.add_hline(
                         y=0, line_width=1, line_dash="dot",
-                        line_color=T["border"],
+                        line_color="rgba(255,255,255,0.3)",
+                    )
+                    fig_c.add_vline(
+                        x=len(hist_vals) - 0.5,
+                        line_width=1, line_dash="dash",
+                        line_color="rgba(255,255,255,0.4)",
+                        annotation_text="Forecast Start",
+                        annotation_position="top left",
                     )
                     fig_c.update_layout(**base_layout(
-                        title=f"Chronos — {anzeige} (Zero-Shot, Test-Periode)",
+                        title=f"Chronos — {anzeige} | {CHRONOS_HORIZON}-Tage Zero-Shot Forecast",
                         yaxis_title="Log-Return (%)",
-                        height=300,
+                        height=320,
                     ))
                     st.plotly_chart(fig_c, use_container_width=True)
+                    st.caption(
+                        f"Chronos forecasted {CHRONOS_HORIZON} Handelstage vorwärts "
+                        f"(Zero-Shot, kein Training auf diesen Daten). "
+                        f"Evaluation gegen die ersten {CHRONOS_HORIZON} Tage des Test-Sets."
+                    )
 
                 # ── TimeGPT — API-based ───────────────────────────────────────
                 st.divider()
@@ -867,7 +904,7 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         with st.spinner(f"TimeGPT berechnet {anzeige}..."):
                             tgpt_res = timegpt_forecast(
                                 train_ret,
-                                steps=len(test_ret),
+                                steps=CHRONOS_HORIZON,   # same 10-step horizon
                                 api_key=nixtla_key,
                             )
 
@@ -875,8 +912,9 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                             st.warning(f"TimeGPT ({anzeige}): {tgpt_res['fehler']}")
                             continue
 
+                        # Evaluate against first CHRONOS_HORIZON test days
                         met_t = evaluate_foundation_model(
-                            tgpt_res, test_ret,
+                            tgpt_res, test_ret.iloc[:CHRONOS_HORIZON],
                             f"TimeGPT ({anzeige})",
                         )
                         foundation_rows.append({
