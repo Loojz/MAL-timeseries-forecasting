@@ -111,7 +111,7 @@ def granger_causality_test(df_returns: pd.DataFrame, lag: int) -> dict:
                     "Beziehung":       key,
                     "F-Statistik":     round(f_stat, 4),
                     "p-Wert":          round(p_val, 4),
-                    "Granger-kausal":  "✅ Ja (p<0.05)" if p_val < 0.05 else "❌ Nein",
+                    "Granger-kausal":  "Ja (p<0.05)" if p_val < 0.05 else "Nein",
                     "Interpretation":  (
                         f"{causing} Granger-verursacht {caused}"
                         if p_val < 0.05 else

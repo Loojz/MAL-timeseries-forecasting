@@ -17,7 +17,7 @@ from src.models.var_model import (bereite_var_daten_vor, var_lag_selektion,
 
 
 def render(zeitraum: str, zeitraum_label: str):
-    st.title("📊 Multivariate Zeitreihenanalyse")
+    st.title("Multivariate Zeitreihenanalyse")
     st.caption(
         "Teil 3 – VAR(p) Modelle · Granger Causality · Rekursive Prognose · "
         "State Space Models (ETS) · Modellvergleich"
@@ -31,14 +31,14 @@ def render(zeitraum: str, zeitraum_label: str):
         st.error("Mindestens 2 Zeitreihen nötig.")
         return
 
-    tab_main, tab_research = st.tabs(["📊 Analyse", "🔬 Research"])
+    tab_main, tab_research = st.tabs(["Analyse", "Research"])
 
     # ═══════════════════════════════════════════════════════════════════════════
     with tab_main:
     # ═══════════════════════════════════════════════════════════════════════════
 
         # ── Normierter Vergleich ──────────────────────────────────────────────
-        st.subheader("📈 Normierter Vergleich aller Assets (Start=100)")
+        st.subheader("Normierter Vergleich aller Assets — Start = 100")
         fig = go.Figure()
         for name, df in alle.items():
             y = normiere(df)
@@ -69,7 +69,7 @@ def render(zeitraum: str, zeitraum_label: str):
         mit $\\boldsymbol{\\epsilon}_t \\sim iid(0, \\Sigma_\\epsilon)$ und $\\mathbf{y}_t = [r_{Gold,t}, r_{BTC,t}, r_{EUR,t}]'$
         """)
 
-        if st.button("🚀 VAR-Analyse starten", key="var_start"):
+        if st.button("VAR-Analyse starten", key="var_start"):
             # Daten vorbereiten
             with st.spinner("Bereite Daten vor..."):
                 df_returns = bereite_var_daten_vor(alle)
@@ -249,7 +249,7 @@ def render(zeitraum: str, zeitraum_label: str):
 
             # ── Gesamtübersicht Modellvergleich ───────────────────────────────
             st.divider()
-            st.subheader("🏆 Gesamtübersicht: Modellvergleich")
+            st.subheader("Gesamtübersicht — Modellvergleich")
             st.markdown(
                 "Vergleich aller Modelle nach RMSE auf dem Test-Set (30%):\n"
                 "Random Walk (Benchmark) · ARIMA (univariat) · VAR (multivariat) · ETS (State Space)"
@@ -285,12 +285,12 @@ def render(zeitraum: str, zeitraum_label: str):
     # ═══════════════════════════════════════════════════════════════════════════
 
         st.info(
-            "🔬 **Research-Modus:** Öffne die Expander unten um die "
+            "**Research —** Öffne die Expander unten um die "
             "jeweilige Analyse zu laden. Jede Sektion berechnet sich "
             "unabhängig und nur bei Bedarf."
         )
         st.markdown("""
-        ### 🔬 Statistische Tiefenanalyse
+        ### Statistische Tiefenanalyse
 
         Diese Sektion enthält die vollständige statistische Analyse
         aus dem Research-Notebook (`03_multivariate_var.ipynb`).
@@ -311,7 +311,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 1 — Johansen Kointegrations-Test
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("1️⃣ Kointegrations-Test (Johansen)", expanded=False):
+        with st.expander("01 — Kointegrations-Test (Johansen)", expanded=False):
             try:
                 st.markdown(
                     "Der Johansen-Test prüft, ob zwischen den drei Log-Preis-Reihen "
@@ -342,7 +342,7 @@ def render(zeitraum: str, zeitraum_label: str):
                         "Trace-Statistik":     round(float(jh.lr1[i]), 2),
                         "Krit. 90%":           round(float(jh.cvt[i, 0]), 2),
                         "Krit. 95%":           round(float(jh.cvt[i, 1]), 2),
-                        "Signifikant (95%)":   "✅" if sig else "❌",
+                        "Signifikant (95%)":   "Ja" if sig else "Nein",
                     })
                 st.dataframe(
                     pd.DataFrame(trace_rows),
@@ -368,7 +368,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 2 — QLR-Test
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("2️⃣ QLR-Test — Unbekannte Strukturbrüche", expanded=False):
+        with st.expander("02 — QLR-Test · Unbekannte Strukturbrüche", expanded=False):
             try:
                 st.markdown(
                     "Der QLR-Test sucht nach einem unbekannten Strukturbruch. "
@@ -446,7 +446,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 3 — VAR(3) vs VAR(auto)
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("3️⃣ VAR(3) vs. VAR(auto) — Lag-Vergleich", expanded=False):
+        with st.expander("03 — VAR(3) vs. VAR(auto) · Lag-Vergleich", expanded=False):
             try:
                 st.markdown(
                     "Der Prof empfiehlt VAR(3) als Standard. Wir vergleichen "
@@ -485,7 +485,7 @@ def render(zeitraum: str, zeitraum_label: str):
                 st.metric("Automatisch gewählter Lag (BIC)", p_auto)
 
                 if p_auto == 3:
-                    verdict = "BIC wählt p=3 — identisch mit der Professorenempfehlung ✅"
+                    verdict = "BIC wählt p=3 — identisch mit der Professorenempfehlung"
                 elif float(var_auto.bic) < float(_var3.bic):
                     verdict = (
                         f"VAR({p_auto}) hat niedrigeres BIC "
@@ -507,7 +507,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 4 — Impulse Response Functions (IRF)
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("4️⃣ Impulse Response Functions (IRF)", expanded=False):
+        with st.expander("04 — Impulse Response Functions (IRF)", expanded=False):
             try:
                 st.markdown(
                     "Die IRF zeigt wie ein einmaliger Schock in Asset X die anderen "
@@ -566,7 +566,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 5 — FEVD
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("5️⃣ Forecast Error Variance Decomposition (FEVD)", expanded=False):
+        with st.expander("05 — Forecast Error Variance Decomposition (FEVD)", expanded=False):
             try:
                 st.markdown(
                     "Die FEVD zeigt, wie viel der Vorhersageunsicherheit eines Assets "
@@ -608,7 +608,7 @@ def render(zeitraum: str, zeitraum_label: str):
                                 max_target = ANZEIGE_NAMEN.get(row_asset, row_asset)
 
                 st.info(
-                    f"💡 {max_target} wird zu ~{max_spill:.1f}% durch {max_shock} erklärt — "
+                    f"▸ {max_target} wird zu ~{max_spill:.1f}% durch {max_shock} erklärt — "
                     "der stärkste Cross-Asset Spillover im System."
                 )
             except Exception as e:
@@ -617,7 +617,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # ─────────────────────────────────────────────────────────────────────
         # Expander 6 — Vollständiges Backtesting (4 Modelle)
         # ─────────────────────────────────────────────────────────────────────
-        with st.expander("6️⃣ Vollständiges Backtesting — 4 Modelle", expanded=False):
+        with st.expander("06 — Vollständiges Backtesting · 4 Modelle", expanded=False):
             try:
                 st.markdown(
                     "Vergleich von VAR(3), VAR(auto), ARIMA und Random Walk auf "
@@ -725,7 +725,7 @@ def render(zeitraum: str, zeitraum_label: str):
         # Expander 7 — Foundation Models (Chronos + TimeGPT)
         # ─────────────────────────────────────────────────────────────────────
         st.divider()
-        st.markdown("### 🤖 Foundation Models — Zero-Shot Forecasting")
+        st.markdown("### Foundation Models — Zero-Shot Forecasting")
         st.markdown("""
 Foundation Models sind große vortrainierte neuronale Netze, die ohne
 Feintuning auf neuen Zeitreihen Prognosen erstellen können
@@ -737,7 +737,7 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
 | **TimeGPT** | Nixtla | API-basiert | Speziell für Zeitreihen entwickelt |
         """)
 
-        with st.expander("7️⃣ Foundation Models (Chronos + TimeGPT)", expanded=False):
+        with st.expander("07 — Foundation Models · Chronos + TimeGPT-2.1", expanded=False):
             try:
                 import os
                 from src.models.foundation import (
@@ -764,7 +764,7 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                 foundation_rows = []
 
                 # ── Chronos — one plot per asset ──────────────────────────────
-                st.markdown("#### 📡 Chronos (Amazon) — Lokal")
+                st.markdown("#### Chronos (Amazon) — Lokal")
                 st.caption(
                     f"Chronos wird beim ersten Aufruf heruntergeladen "
                     f"(~80 MB für '{model_size}'). Bitte warten."
@@ -881,7 +881,7 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
 
                 # ── TimeGPT-2.1 ───────────────────────────────────────────────
                 st.divider()
-                st.markdown("#### 🌐 TimeGPT-2.1 (Nixtla) — API-basiert")
+                st.markdown("#### TimeGPT-2.1 (Nixtla) — API")
 
                 nixtla_key = os.environ.get("NIXTLA_API_KEY")
                 if not nixtla_key:

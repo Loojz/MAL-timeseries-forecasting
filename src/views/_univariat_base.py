@@ -52,13 +52,13 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
     st.divider()
 
     # ── 1. Deskriptive Statistik ──────────────────────────────────────────────
-    st.subheader("📊 1. Deskriptive Statistik")
+    st.subheader("1 — Deskriptive Statistik")
     st.dataframe(deskriptive_statistik(df), use_container_width=True, hide_index=True)
 
     st.divider()
 
     # ── 2. Strukturbrüche ─────────────────────────────────────────────────────
-    st.subheader("🔍 2. Strukturbrüche")
+    st.subheader("2 — Strukturbrüche")
     st.markdown(
         "Strukturbrüche werden **vor** dem Stationaritätstest geprüft, da sie den "
         "ADF-Test verzerren können (Perron 1989)."
@@ -144,7 +144,7 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
     st.divider()
 
     # ── 3. Stationaritätstest ─────────────────────────────────────────────────
-    st.subheader("🔬 3. Stationaritätstest & Transformation (Schritte 1 & 2)")
+    st.subheader("3 — Stationaritätstest & Transformation")
     st.markdown(
         "ADF und KPSS komplementär:\n"
         "- **ADF**: H₀ = Einheitswurzel (nicht stationär)\n"
@@ -203,7 +203,7 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
         f"Zeitreihen-konform (kein Shuffling)"
     )
 
-    if st.button(f"🚀 Box-Jenkins Pipeline starten", key=f"{asset_key}_pipeline"):
+    if st.button(f"Box-Jenkins Pipeline starten", key=f"{asset_key}_pipeline"):
         with st.spinner("Analyse läuft (~30–60 Sek)..."):
             res = box_jenkins_pipeline(close, asset_key, FORECAST_STEPS, TRAIN_RATIO)
 
@@ -263,7 +263,7 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
         with tab_kand:
             st.dataframe(res["schritt4_selektion"]["kandidaten_tabelle"],
                          use_container_width=True, hide_index=True)
-            st.caption("⚠️ ARIMA(2,1,2): nicht signifikante Koeffizienten → Überanpassung (wie im Notebook erklärt)")
+            st.caption("ARIMA(2,1,2): nicht signifikante Koeffizienten — Überanpassung (siehe Notebook)")
         with tab_grid:
             st.dataframe(res["schritt4_selektion"]["grid_tabelle"],
                          use_container_width=True, hide_index=True)

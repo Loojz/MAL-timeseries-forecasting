@@ -7,7 +7,7 @@ import streamlit as st
 
 st.set_page_config(
     page_title="MAL Time Series Forecasting",
-    page_icon="📈",
+    page_icon="〜",
     layout="wide",
     initial_sidebar_state="expanded",
 )
@@ -40,13 +40,13 @@ from src.views import gold, bitcoin, eur_usd, multivariate
 from src.utils.config import ZEITRAEUME
 
 SEITEN = {
-    "📊  Teil 3: Multivariate Analyse":    multivariate.render,
+    "Teil 3: Multivariate Analyse":    multivariate.render,
     "🥇  Teil 2: Gold (ARIMA)":            gold.render,
     "₿   Teil 2: Bitcoin (ARIMA)":         bitcoin.render,
     "💱  Teil 2: EUR/USD (ARIMA)":         eur_usd.render,
 }
 
-st.sidebar.markdown("## 📈 MAL Time Series")
+st.sidebar.markdown("## MAL Time Series")
 st.sidebar.markdown("**Box-Jenkins · VAR · Granger · ETS**")
 st.sidebar.markdown("---")
 

@@ -58,7 +58,7 @@ def chow_test_auf_diff(series_diff: pd.Series, break_date: str) -> dict:
         "N Post":         len(y_post),
         "F-Statistik":    round(chow_f, 4),
         "p-Wert":         round(p_val, 4),
-        "Strukturbruch":  "✅ Ja (p<0.05)" if p_val < 0.05 else "❌ Nein (p≥0.05)",
+        "Strukturbruch":  "Ja (p<0.05)" if p_val < 0.05 else "Nein (p≥0.05)",
         "Interpretation": (
             f"H0 abgelehnt: Prozess hat sich bei T*={break_date} verändert → Subsample empfohlen"
             if p_val < 0.05 else
@@ -105,7 +105,7 @@ def qlr_test(series: pd.Series, trim: float = 0.15) -> dict:
         "Max. F-Statistik": round(f_max, 4),
         "Geschätzter T*":   t_star,
         "Krit. Wert 10%":   krit_10,
-        "Strukturbruch":    "✅ Ja" if f_max > krit_10 else "❌ Nein",
+        "Strukturbruch":    "Ja" if f_max > krit_10 else "Nein",
         "Interpretation":   (
             f"Bruch bei Index t={t_star} (F={f_max:.2f} > {krit_10})"
             if f_max > krit_10 else
@@ -146,7 +146,7 @@ def vergleiche_kandidaten(series: pd.Series, train: pd.Series, test: pd.Series) 
                 "BIC":           round(mod.bic, 2),
                 "RMSE (Test)":   round(rmse, 6),
                 "MAE (Test)":    round(mae, 6),
-                "Koeff. sign.":  "✅" if sig else "⚠️ Überanpassung prüfen",
+                "Koeff. sign.":  "Ja" if sig else "Nein — Überanpassung prüfen",
                 "Beschreibung":  beschr,
             })
         except Exception as e:
@@ -178,9 +178,9 @@ def residual_diagnostics_dict(model) -> dict:
         "normalverteilt": jb_p > 0.05,
         "interpretation": (
             f"Ljung-Box Lag10 p={lb10['lb_pvalue'].iloc[0]:.4f}: "
-            f"{'Keine Autokorr. ✅' if float(lb10['lb_pvalue'].iloc[0])>0.05 else 'Autokorr. ❌'}\n"
+            f"{'Keine Autokorrelation' if float(lb10['lb_pvalue'].iloc[0])>0.05 else 'Autokorrelation vorhanden'}\n"
             f"Jarque-Bera p={jb_p:.4f}: "
-            f"{'Normalverteilt ✅' if jb_p>0.05 else 'Nicht normalverteilt ❌ (bei Finanzdaten normal – Fat Tails)'}"
+            f"{'Normalverteilt' if jb_p>0.05 else 'Nicht normalverteilt (bei Finanzdaten typisch — Fat Tails)'}"
         ),
     }
 
@@ -257,11 +257,11 @@ def box_jenkins_pipeline(
 
     # ADF/KPSS Diskrepanz erklären (Notebook-Insight)
     diskrepanz = ""
-    if (adf_ret.get("Stationär (p < 0.05)") == "✅ Ja" and
-            kpss_ret.get("Stationär (p > 0.05)") == "❌ Nein"):
+    if (adf_ret.get("Stationär (p < 0.05)") == "Ja" and
+            kpss_ret.get("Stationär (p > 0.05)") == "Nein"):
         diskrepanz = (
-            "⚠️ ADF und KPSS widersprechen sich – bei Finanzdaten nicht ungewöhnlich.\n"
-            "ADF bestätigt: kein Unit Root → stationär ✅\n"
+            "Hinweis: ADF und KPSS widersprechen sich – bei Finanzdaten nicht ungewöhnlich.\n"
+            "ADF bestätigt: kein Unit Root → stationär\n"
             "KPSS reagiert auf zeitlich variierende Varianz (Heteroskedastizität).\n"
             "Ruhige Phasen wechseln mit turbulenten → ARCH-Effekte.\n"
             "→ Für ARIMA reicht ADF: d=1 ausreichend.\n"
@@ -350,7 +350,7 @@ def box_jenkins_pipeline(
         "interpretation": (
             f"BIC-Sieger: {df_kand.iloc[0]['Modell']} (BIC={df_kand.iloc[0]['BIC']:.2f})\n"
             f"Grid AIC-Sieger: ARIMA{bestes_order}\n"
-            f"⚠️ Koeff. nicht sign. → Überanpassung (wie ARIMA(2,1,2) im Gold-Notebook)"
+            f"Koeff. nicht sign. — Überanpassung (siehe ARIMA(2,1,2) im Gold-Notebook)"
         ),
     }
 
@@ -396,7 +396,7 @@ def box_jenkins_pipeline(
         "Std. Fehler":  bestes_mod.bse.values.round(6),
         "t-Statistik":  bestes_mod.tvalues.values.round(4),
         "p-Wert":       bestes_mod.pvalues.values.round(4),
-        "Signifikant":  ["✅" if abs(t)>1.96 else "❌" for t in bestes_mod.tvalues.values],
+        "Signifikant":  ["Ja" if abs(t)>1.96 else "Nein" for t in bestes_mod.tvalues.values],
     })
     results["schritt6_koeffizienten"] = {
         "tabelle": koeff_df,
@@ -435,7 +435,7 @@ def box_jenkins_pipeline(
         "interpretation": (
             f"ARIMA{bestes_order} vs. Random Walk:\n"
             f"RMSE ARIMA: {arima_met.get('RMSE','–')} | RMSE RW: {rw_met.get('RMSE','–')}\n"
-            f"EUR/USD-Teammitglied: ARIMA(0,1,0) gewinnt → klassischer Random Walk ✅"
+            f"EUR/USD: ARIMA(0,1,0) gewinnt — klassischer Random Walk"
         ),
     }
 

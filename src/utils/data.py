@@ -140,7 +140,7 @@ def adf_test(series: pd.Series, bezeichnung: str = "") -> dict:
             "Krit. Wert 1%":         round(krit["1%"], 4),
             "Krit. Wert 5%":         round(krit["5%"], 4),
             "Krit. Wert 10%":        round(krit["10%"], 4),
-            "Stationär (p < 0.05)":  "✅ Ja" if stationaer else "❌ Nein",
+            "Stationär (p < 0.05)":  "Ja" if stationaer else "Nein",
             "Interpretation":        (
                 "H0 abgelehnt → I(0): stationär"
                 if stationaer else
@@ -169,7 +169,7 @@ def kpss_test(series: pd.Series, bezeichnung: str = "") -> dict:
             "Krit. Wert 1%":         round(krit["1%"], 4),
             "Krit. Wert 5%":         round(krit["5%"], 4),
             "Krit. Wert 10%":        round(krit["10%"], 4),
-            "Stationär (p > 0.05)":  "✅ Ja" if stationaer else "❌ Nein",
+            "Stationär (p > 0.05)":  "Ja" if stationaer else "Nein",
             "Interpretation":        (
                 "H0 nicht abgelehnt → stationär"
                 if stationaer else
