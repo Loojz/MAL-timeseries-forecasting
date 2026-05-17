@@ -119,7 +119,18 @@ st.sidebar.markdown("""
 st.sidebar.markdown("**Box-Jenkins · VAR · Granger · ETS**")
 st.sidebar.markdown("---")
 
-seite = st.sidebar.radio("Navigation", list(SEITEN.keys()), label_visibility="collapsed")
+seite = st.sidebar.radio(
+    "Navigation", list(SEITEN.keys()),
+    label_visibility="collapsed",
+    key="nav_radio",
+)
+
+# ── Sauberer Seitenwechsel: bei neuem Ziel einmal neu laden ──────────────────
+# Verhindert, dass Streamlit alte UI-Elemente beim Seitenwechsel
+# kurzzeitig zusammen mit dem neuen Inhalt anzeigt.
+if st.session_state.get("_active_page") != seite:
+    st.session_state["_active_page"] = seite
+    st.rerun()
 
 zeitraum_label = st.sidebar.selectbox("Zeitraum", list(ZEITRAEUME.keys()), index=2)
 zeitraum       = ZEITRAEUME[zeitraum_label]

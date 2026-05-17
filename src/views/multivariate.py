@@ -31,7 +31,7 @@ def render(zeitraum: str, zeitraum_label: str):
         st.error("Mindestens 2 Zeitreihen nötig.")
         return
 
-    tab_main, tab_research = st.tabs(["Analyse", "Research"])
+    tab_main, tab_research = st.tabs(["Analyse", "Research"], key="mv_tabs")
 
     # ═══════════════════════════════════════════════════════════════════════════
     with tab_main:
