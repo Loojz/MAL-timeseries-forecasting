@@ -247,37 +247,362 @@ def render(zeitraum: str, zeitraum_label: str):
             if ets_metriken:
                 st.dataframe(pd.DataFrame(ets_metriken), use_container_width=True, hide_index=True)
 
+            # ── ARIMA (univariat, pro Asset) ──────────────────────────────────
+            st.divider()
+            st.subheader("8. ARIMA — Univariate Modelle")
+            st.markdown(
+                "Box-Jenkins ARIMA wird für jedes Asset separat auf Log-Renditen "
+                "geschätzt. Automatische Modellwahl via AIC/BIC."
+            )
+
+            arima_metriken = []
+            arima_forecasts = {}
+
+            for asset_name, df_asset in alle.items():
+                anzeige = ANZEIGE_NAMEN.get(asset_name, asset_name)
+                color   = ASSET_FARBEN.get(asset_name, T["text"])
+                log_ret = berechne_log_returns(df_asset).dropna()
+
+                with st.spinner(f"Fitte ARIMA für {anzeige}..."):
+                    try:
+                        from src.models.arima_model import box_jenkins_pipeline
+                        arima_res = box_jenkins_pipeline(log_ret, anzeige)
+                    except Exception as e:
+                        st.warning(f"ARIMA ({anzeige}): {e}")
+                        continue
+
+                if "fehler" in arima_res:
+                    st.warning(f"ARIMA ({anzeige}): {arima_res['fehler']}")
+                    continue
+
+                # Store metrics — keys live in nested sub-dicts from box_jenkins_pipeline
+                best_order = arima_res.get("schritt4_selektion", {}).get("bestes_order", "?")
+                rmse_val   = arima_res.get("benchmark_vergleich", {}).get("arima", {}).get("RMSE", "–")
+                mae_val    = arima_res.get("benchmark_vergleich", {}).get("arima", {}).get("MAE",  "–")
+                arima_metriken.append({
+                    "Asset":         anzeige,
+                    "Bestes Modell": f"ARIMA{best_order}",
+                    "RMSE":          rmse_val,
+                    "MAE":           mae_val,
+                })
+
+                # Store forecast for combined plot
+                arima_forecasts[asset_name] = arima_res
+
+                # Forecast values from schritt7_prognose (statsmodels Series)
+                _prognose = arima_res.get("schritt7_prognose", {})
+                fc_values = _prognose.get("prognose_mean",   None)
+                fc_lower  = _prognose.get("konfidenz_lower", None)
+                fc_upper  = _prognose.get("konfidenz_upper", None)
+
+                if fc_values is not None:
+                    hist_vals = log_ret.iloc[-60:].values * 100
+                    hist_x    = list(range(len(hist_vals)))
+                    fc_len    = len(fc_values)
+                    fc_x      = list(range(len(hist_vals),
+                                          len(hist_vals) + fc_len))
+
+                    fig_a = go.Figure()
+                    fig_a.add_trace(go.Scatter(
+                        x=hist_x, y=hist_vals,
+                        name="Historisch",
+                        line=dict(color=color, width=2),
+                    ))
+                    fig_a.add_trace(go.Scatter(
+                        x=fc_x,
+                        y=[v * 100 for v in fc_values],
+                        name=f"ARIMA{best_order}",
+                        line=dict(color=T["purple"], width=2, dash="dash"),
+                        mode="lines+markers",
+                        marker=dict(size=4),
+                    ))
+                    if fc_lower is not None and fc_upper is not None:
+                        fig_a.add_trace(go.Scatter(
+                            x=fc_x + fc_x[::-1],
+                            y=[v * 100 for v in fc_upper] +
+                              [v * 100 for v in fc_lower[::-1]],
+                            fill="toself",
+                            fillcolor="rgba(139,92,246,0.12)",
+                            line=dict(color="rgba(0,0,0,0)"),
+                            name="95% KI",
+                        ))
+                    fig_a.add_hline(
+                        y=0, line_width=1, line_dash="dot",
+                        line_color=T["border"],
+                    )
+                    fig_a.add_vline(
+                        x=len(hist_vals) - 0.5,
+                        line_width=1, line_dash="dash",
+                        line_color="rgba(255,255,255,0.3)",
+                        annotation_text="Forecast Start",
+                        annotation_position="top left",
+                    )
+                    fig_a.update_layout(**base_layout(
+                        title=f"ARIMA{best_order} — {anzeige} · {FORECAST_STEPS}-Tage Prognose",
+                        yaxis_title="Log-Return (%)",
+                        height=300,
+                    ))
+                    st.plotly_chart(fig_a, use_container_width=True)
+
+            if arima_metriken:
+                st.dataframe(
+                    pd.DataFrame(arima_metriken),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+
+            # ── Foundation Models (Chronos + TimeGPT) ─────────────────────────
+            st.divider()
+            st.subheader("9. Foundation Models — Zero-Shot Forecasting")
+            st.markdown(
+                "Chronos (Amazon, lokal) und TimeGPT-2.1 (Nixtla, API) werden "
+                "ohne Training auf diesen Daten eingesetzt — reines Zero-Shot Forecasting."
+            )
+
+            from src.models.foundation import (
+                chronos_forecast, timegpt_forecast, evaluate_foundation_model
+            )
+            import os
+
+            HORIZON = FORECAST_STEPS
+            foundation_metriken = []
+            nixtla_key = os.environ.get("NIXTLA_API_KEY")
+
+            for asset_name, df_asset in alle.items():
+                anzeige  = ANZEIGE_NAMEN.get(asset_name, asset_name)
+                color    = ASSET_FARBEN.get(asset_name, T["text"])
+                log_ret  = berechne_log_returns(df_asset).dropna()
+                split    = int(len(log_ret) * 0.70)
+                train    = log_ret.iloc[:split]
+                test     = log_ret.iloc[split:]
+                y_eval   = test.iloc[:HORIZON]
+
+                col_c, col_t = st.columns(2)
+
+                # ── Chronos ──
+                with col_c:
+                    st.markdown(f"**Chronos — {anzeige}**")
+                    with st.spinner(f"Chronos berechnet {anzeige}..."):
+                        c_res = chronos_forecast(
+                            train, steps=HORIZON,
+                            model_size="tiny", n_samples=20, seed=42,
+                        )
+
+                    if "fehler" not in c_res:
+                        met_c = evaluate_foundation_model(
+                            c_res, y_eval, f"Chronos ({anzeige})"
+                        )
+                        foundation_metriken.append({
+                            "Asset":  anzeige,
+                            "Modell": "Chronos",
+                            "RMSE":   met_c.get("RMSE", "–"),
+                            "MAE":    met_c.get("MAE",  "–"),
+                        })
+
+                        hist_vals = log_ret.iloc[-60:].values * 100
+                        hist_x    = list(range(len(hist_vals)))
+                        fc_x      = list(range(len(hist_vals),
+                                              len(hist_vals) + HORIZON))
+
+                        fig_c = go.Figure()
+                        fig_c.add_trace(go.Scatter(
+                            x=hist_x, y=hist_vals,
+                            name="Historisch",
+                            line=dict(color=color, width=2),
+                        ))
+                        fig_c.add_trace(go.Scatter(
+                            x=fc_x,
+                            y=c_res["median"].values * 100,
+                            name=f"Chronos ({HORIZON}d)",
+                            line=dict(color="#22c55e", width=2, dash="dash"),
+                            mode="lines+markers", marker=dict(size=4),
+                        ))
+                        fig_c.add_trace(go.Scatter(
+                            x=fc_x + fc_x[::-1],
+                            y=list(c_res["upper_95"].values * 100)
+                              + list(c_res["lower_95"].values[::-1] * 100),
+                            fill="toself",
+                            fillcolor="rgba(34,197,94,0.10)",
+                            line=dict(color="rgba(0,0,0,0)"),
+                            name="95% KI",
+                        ))
+                        fig_c.add_hline(
+                            y=0, line_width=1, line_dash="dot",
+                            line_color=T["border"],
+                        )
+                        fig_c.add_vline(
+                            x=len(hist_vals) - 0.5,
+                            line_width=1, line_dash="dash",
+                            line_color="rgba(255,255,255,0.3)",
+                        )
+                        fig_c.update_layout(**base_layout(
+                            title=f"Chronos — {anzeige}",
+                            yaxis_title="Log-Return (%)", height=280,
+                        ))
+                        st.plotly_chart(fig_c, use_container_width=True)
+                    else:
+                        st.warning(f"Chronos: {c_res['fehler']}")
+
+                # ── TimeGPT ──
+                with col_t:
+                    st.markdown(f"**TimeGPT-2.1 — {anzeige}**")
+                    if not nixtla_key:
+                        st.info("NIXTLA_API_KEY nicht gesetzt — TimeGPT nicht verfügbar.")
+                    else:
+                        with st.spinner(f"TimeGPT berechnet {anzeige}..."):
+                            t_res = timegpt_forecast(
+                                train, steps=HORIZON,
+                                api_key=nixtla_key, model="timegpt-2.1",
+                            )
+
+                        if "fehler" not in t_res:
+                            met_t = evaluate_foundation_model(
+                                t_res, y_eval, f"TimeGPT ({anzeige})"
+                            )
+                            foundation_metriken.append({
+                                "Asset":  anzeige,
+                                "Modell": "TimeGPT-2.1",
+                                "RMSE":   met_t.get("RMSE", "–"),
+                                "MAE":    met_t.get("MAE",  "–"),
+                            })
+
+                            hist_vals = log_ret.iloc[-60:].values * 100
+                            hist_x    = list(range(len(hist_vals)))
+                            fc_x      = list(range(len(hist_vals),
+                                                  len(hist_vals) + HORIZON))
+
+                            fig_t = go.Figure()
+                            fig_t.add_trace(go.Scatter(
+                                x=hist_x, y=hist_vals,
+                                name="Historisch",
+                                line=dict(color=color, width=2),
+                            ))
+                            fig_t.add_trace(go.Scatter(
+                                x=fc_x,
+                                y=t_res["median"].values * 100,
+                                name=f"TimeGPT-2.1 ({HORIZON}d)",
+                                line=dict(color=T["purple"], width=2,
+                                          dash="dash"),
+                                mode="lines+markers", marker=dict(size=4),
+                            ))
+                            fig_t.add_trace(go.Scatter(
+                                x=fc_x + fc_x[::-1],
+                                y=list(t_res["upper_95"].values * 100)
+                                  + list(t_res["lower_95"].values[::-1] * 100),
+                                fill="toself",
+                                fillcolor="rgba(139,92,246,0.10)",
+                                line=dict(color="rgba(0,0,0,0)"),
+                                name="95% KI",
+                            ))
+                            fig_t.add_hline(
+                                y=0, line_width=1, line_dash="dot",
+                                line_color=T["border"],
+                            )
+                            fig_t.add_vline(
+                                x=len(hist_vals) - 0.5,
+                                line_width=1, line_dash="dash",
+                                line_color="rgba(255,255,255,0.3)",
+                            )
+                            fig_t.update_layout(**base_layout(
+                                title=f"TimeGPT-2.1 — {anzeige}",
+                                yaxis_title="Log-Return (%)", height=280,
+                            ))
+                            st.plotly_chart(fig_t, use_container_width=True)
+                        else:
+                            st.warning(f"TimeGPT: {t_res['fehler']}")
+
+            if foundation_metriken:
+                st.dataframe(
+                    pd.DataFrame(foundation_metriken),
+                    use_container_width=True,
+                    hide_index=True,
+                )
+                st.caption(
+                    "MAPE ausgeschlossen — bei Log-Renditen nahe Null "
+                    "führt Division durch ~0 zu verzerrten Werten."
+                )
+
             # ── Gesamtübersicht Modellvergleich ───────────────────────────────
             st.divider()
             st.subheader("Gesamtübersicht — Modellvergleich")
             st.markdown(
-                "Vergleich aller Modelle nach RMSE auf dem Test-Set (30%):\n"
-                "Random Walk (Benchmark) · ARIMA (univariat) · VAR (multivariat) · ETS (State Space)"
+                "RMSE aller getesteten Modelle auf dem Test-Set (30%). "
+                "Random Walk ist der naive Benchmark."
             )
 
-            if "fehler" not in eval_res and ets_metriken:
+            if "fehler" not in eval_res:
                 summary_rows = []
                 for col in df_returns.columns:
                     anzeige = ANZEIGE_NAMEN.get(col, col)
-                    rw_rmse = eval_res["metriken"][col]["RandomWalk"]["RMSE"]
+
+                    # VAR + Random Walk from eval_res
+                    rw_rmse  = eval_res["metriken"][col]["RandomWalk"]["RMSE"]
                     var_rmse = eval_res["metriken"][col]["VAR"]["RMSE"]
-                    ets_row = next((e for e in ets_metriken if e["Asset"] == anzeige), {})
+
+                    # ETS
+                    ets_row  = next(
+                        (e for e in ets_metriken if e["Asset"] == anzeige), {}
+                    )
                     ets_rmse = ets_row.get("RMSE", "–")
+
+                    # ARIMA
+                    arima_row = next(
+                        (a for a in arima_metriken if a["Asset"] == anzeige), {}
+                    )
+                    arima_rmse = arima_row.get("RMSE", "–")
+
+                    # Chronos
+                    chronos_row = next(
+                        (f for f in foundation_metriken
+                         if f["Asset"] == anzeige and f["Modell"] == "Chronos"),
+                        {}
+                    )
+                    chronos_rmse = chronos_row.get("RMSE", "–")
+
+                    # TimeGPT
+                    tgpt_row = next(
+                        (f for f in foundation_metriken
+                         if f["Asset"] == anzeige
+                         and f["Modell"] == "TimeGPT-2.1"),
+                        {}
+                    )
+                    tgpt_rmse = tgpt_row.get("RMSE", "–")
+
+                    # Best model
+                    candidates = [
+                        ("Random Walk", rw_rmse),
+                        ("VAR",         var_rmse),
+                        ("ETS",         ets_rmse),
+                        ("ARIMA",       arima_rmse),
+                        ("Chronos",     chronos_rmse),
+                        ("TimeGPT-2.1", tgpt_rmse),
+                    ]
+                    valid = [
+                        (name, v) for name, v in candidates
+                        if isinstance(v, (int, float))
+                    ]
+                    best = min(valid, key=lambda x: x[1])[0] if valid else "–"
+
                     summary_rows.append({
-                        "Asset":            anzeige,
-                        "Random Walk RMSE": rw_rmse,
-                        "VAR RMSE":         var_rmse,
-                        "ETS RMSE":         ets_rmse,
-                        "Bestes Modell":    min(
-                            [("Random Walk", rw_rmse), ("VAR", var_rmse),
-                             ("ETS", ets_rmse if isinstance(ets_rmse, float) else 999)],
-                            key=lambda x: x[1]
-                        )[0],
+                        "Asset":         anzeige,
+                        "Random Walk":   rw_rmse,
+                        "VAR":           var_rmse,
+                        "ETS":           ets_rmse,
+                        "ARIMA":         arima_rmse,
+                        "Chronos":       chronos_rmse,
+                        "TimeGPT-2.1":   tgpt_rmse,
+                        "Bestes Modell": best,
                     })
-                st.dataframe(pd.DataFrame(summary_rows), use_container_width=True, hide_index=True)
+
+                st.dataframe(
+                    pd.DataFrame(summary_rows),
+                    use_container_width=True,
+                    hide_index=True,
+                )
                 st.caption(
-                    "RMSE = √MSE · kleinere Werte = bessere Prognose · "
-                    "Random Walk ist der naive Benchmark (H₀: Einheitswurzel)"
+                    "RMSE = √MSE — kleinere Werte bedeuten bessere Prognose. "
+                    "Random Walk ist der naive Benchmark (H₀: Einheitswurzel). "
+                    "MAPE ausgeschlossen (instabil bei Log-Renditen nahe 0)."
                 )
 
     # ═══════════════════════════════════════════════════════════════════════════
