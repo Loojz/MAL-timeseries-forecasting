@@ -156,8 +156,11 @@ def var_evaluation(df_returns: pd.DataFrame, lag: int,
     """
     Train/Test Evaluation des VAR-Modells.
     Vergleich: VAR(p) vs. univariate Random Walk Benchmark.
+    Includes in-sample train RMSE for overfitting diagnosis.
     """
     from src.utils.data import berechne_metriken
+    from sklearn.metrics import mean_squared_error as _mse
+
     split   = int(len(df_returns) * train_ratio)
     train   = df_returns.iloc[:split]
     test    = df_returns.iloc[split:]
@@ -171,18 +174,43 @@ def var_evaluation(df_returns: pd.DataFrame, lag: int,
 
     metriken = {}
     for col in df_returns.columns:
-        arima_m  = berechne_metriken(test[col], fc_df[col], f"VAR({lag})")
-        # Random Walk Benchmark
-        rw_pred  = np.full(len(test), train[col].iloc[-1])
-        rw_m     = berechne_metriken(test[col], rw_pred, "Random Walk")
-        metriken[col] = {"VAR": arima_m, "RandomWalk": rw_m}
+        var_m   = berechne_metriken(test[col], fc_df[col], f"VAR({lag})")
+        rw_pred = np.full(len(test), train[col].iloc[-1])
+        rw_m    = berechne_metriken(test[col], rw_pred, "Random Walk")
+        metriken[col] = {"VAR": var_m, "RandomWalk": rw_m}
+
+    # In-sample train RMSE — fittedvalues may be shorter by p lags
+    train_test_vergleich = {}
+    try:
+        fitted = var_mod.fittedvalues  # DataFrame (n_train - lag, n_assets)
+        for col in df_returns.columns:
+            min_len      = min(len(train[col]), len(fitted[col]))
+            train_actual = train[col].iloc[-min_len:]
+            train_pred   = fitted[col].iloc[-min_len:]
+            train_rmse   = float(np.sqrt(_mse(train_actual, train_pred)))
+            test_rmse    = float(metriken[col]["VAR"]["RMSE"])
+            ratio        = round(test_rmse / train_rmse, 4) if train_rmse > 0 else "–"
+            diagnose     = (
+                "Overfitting"    if test_rmse > train_rmse * 1.5
+                else "Underfitting" if train_rmse > test_rmse * 1.5
+                else "Gut kalibriert"
+            )
+            train_test_vergleich[col] = {
+                "Train RMSE": round(train_rmse, 6),
+                "Test RMSE":  test_rmse,
+                "Ratio":      ratio,
+                "Diagnose":   diagnose,
+            }
+    except Exception:
+        pass  # stays empty — UI handles gracefully
 
     return {
-        "metriken":       metriken,
-        "n_train":        len(train),
-        "n_test":         len(test),
-        "fc_df":          fc_df,
-        "test_df":        test,
+        "metriken":              metriken,
+        "n_train":               len(train),
+        "n_test":                len(test),
+        "fc_df":                 fc_df,
+        "test_df":               test,
+        "train_test_vergleich":  train_test_vergleich,
     }
 
 

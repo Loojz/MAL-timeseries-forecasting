@@ -465,18 +465,70 @@ def box_jenkins_pipeline(
     except Exception as e:
         results["schritt7_prognose"] = {"fehler": str(e)}
 
-    # ── Benchmark: Random Walk (Markteffizienz) ───────────────────────────────
-    rw_fc      = np.full(len(test), train.iloc[-1])
-    rw_met     = berechne_metriken(test, rw_fc, "Random Walk")
-    arima_fc   = bestes_mod.forecast(steps=len(test))
-    arima_met  = berechne_metriken(test, arima_fc, f"ARIMA{bestes_order}")
+    # ── Benchmark: Random Walk vs. ARIMA (out-of-sample + in-sample) ────────────
+    from sklearn.metrics import mean_squared_error as _mse
+
+    # Out-of-sample test forecasts
+    rw_fc_test    = np.full(len(test), train.iloc[-1])
+    arima_fc_test = bestes_mod.forecast(steps=len(test))
+
+    # In-sample train fit
+    arima_fitted_train = bestes_mod.fittedvalues
+    rw_fitted_train    = pd.Series(
+        np.full(len(train), float(train.mean())),
+        index=train.index,
+    )
+
+    # Align lengths (fittedvalues may be shorter by p lags)
+    min_len_arima     = min(len(train), len(arima_fitted_train))
+    train_aligned     = train.iloc[-min_len_arima:]
+    arima_fit_aligned = arima_fitted_train.iloc[-min_len_arima:]
+
+    arima_train_rmse = float(np.sqrt(_mse(train_aligned,     arima_fit_aligned)))
+    rw_train_rmse    = float(np.sqrt(_mse(train,             rw_fitted_train)))
+    arima_test_rmse  = float(np.sqrt(_mse(test,              arima_fc_test)))
+    rw_test_rmse     = float(np.sqrt(_mse(test,              rw_fc_test)))
+
+    rw_met    = berechne_metriken(test, rw_fc_test,    "Random Walk")
+    arima_met = berechne_metriken(test, arima_fc_test, f"ARIMA{bestes_order}")
+
+    def _diagnose(te, tr):
+        if tr <= 0:
+            return "–"
+        if te > tr * 1.5:
+            return "Overfitting"
+        if tr > te * 1.5:
+            return "Underfitting"
+        return "Gut kalibriert"
+
     results["benchmark_vergleich"] = {
         "random_walk":       rw_met,
         "arima":             arima_met,
-        "arima_besser_rmse": arima_met.get("RMSE",999) < rw_met.get("RMSE",999),
+        "train_test_vergleich": {
+            f"ARIMA{bestes_order}": {
+                "Train RMSE": round(arima_train_rmse, 6),
+                "Test RMSE":  round(arima_test_rmse,  6),
+                "Ratio":      round(arima_test_rmse / arima_train_rmse, 4)
+                              if arima_train_rmse > 0 else "–",
+                "Diagnose":   _diagnose(arima_test_rmse, arima_train_rmse),
+            },
+            "Random Walk": {
+                "Train RMSE": round(rw_train_rmse, 6),
+                "Test RMSE":  round(rw_test_rmse,  6),
+                "Ratio":      round(rw_test_rmse / rw_train_rmse, 4)
+                              if rw_train_rmse > 0 else "–",
+                "Diagnose":   _diagnose(rw_test_rmse, rw_train_rmse),
+            },
+        },
+        "arima_besser_rmse": arima_test_rmse < rw_test_rmse,
         "interpretation": (
             f"ARIMA{bestes_order} vs. Random Walk:\n"
-            f"RMSE ARIMA: {arima_met.get('RMSE','–')} | RMSE RW: {rw_met.get('RMSE','–')}"
+            f"Train RMSE ARIMA: {arima_train_rmse:.6f} | "
+            f"Test RMSE ARIMA: {arima_test_rmse:.6f}\n"
+            f"Ratio (Test/Train): {arima_test_rmse/arima_train_rmse:.4f} "
+            f"→ {'kein Overfitting' if arima_test_rmse < arima_train_rmse * 1.5 else 'Overfitting-Risiko'}"
+            if arima_train_rmse > 0 else
+            f"ARIMA{bestes_order} vs. Random Walk — RMSE: {arima_test_rmse:.6f}"
         ),
     }
 
