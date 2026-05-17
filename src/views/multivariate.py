@@ -679,6 +679,140 @@ def render(zeitraum: str, zeitraum_label: str):
             pass  # expanders handle _df/_var3 being None individually
 
         # ─────────────────────────────────────────────────────────────────────
+        # Expander 0 — Korrelationsanalyse & Deskriptive Statistik (Schritt 3)
+        # ─────────────────────────────────────────────────────────────────────
+        with st.expander("00 — Korrelationsanalyse & Deskriptive Statistik", expanded=False):
+            try:
+                st.markdown(
+                    "Alle drei Log-Rendite-Reihen werden auf einem gemeinsamen "
+                    "Datumsindex synchronisiert. Anschließend: Korrelationsmatrix, "
+                    "rollende 90-Tage-Korrelationen und deskriptive Statistik."
+                )
+                if _df is None:
+                    raise ValueError("Log-Returns DataFrame nicht verfügbar.")
+
+                # ── Korrelationsmatrix ────────────────────────────────────────
+                st.markdown("#### Korrelationsmatrix")
+                corr = _df.corr()
+
+                display_names = [ANZEIGE_NAMEN.get(c, c) for c in corr.columns]
+                n_assets = len(display_names)
+
+                # Plotly heatmap with annotation text
+                z_vals   = corr.values.tolist()
+                text_mat = [
+                    [f"{corr.values[i][j]:.3f}" for j in range(n_assets)]
+                    for i in range(n_assets)
+                ]
+                fig_corr = go.Figure(go.Heatmap(
+                    z=z_vals,
+                    x=display_names, y=display_names,
+                    colorscale=[
+                        [0.0, T["card_bg"]],
+                        [0.5, T["purple"]],
+                        [1.0, T["accent"]],
+                    ],
+                    zmin=-1, zmax=1,
+                    text=text_mat,
+                    texttemplate="%{text}",
+                    textfont=dict(size=13, color="#fff", family=T["font"]),
+                    colorbar=dict(
+                        title=dict(text="ρ", font=dict(color=T["text"])),
+                        tickfont=dict(color=T["text"]),
+                    ),
+                    xgap=3, ygap=3,
+                ))
+                fig_corr.update_layout(**base_layout(
+                    title="Korrelationsmatrix — Log-Renditen",
+                    height=340,
+                    hovermode="closest",
+                    xaxis=dict(side="bottom", tickfont=dict(color=T["text"])),
+                    yaxis=dict(autorange="reversed",
+                               tickfont=dict(color=T["text"])),
+                ))
+                st.plotly_chart(fig_corr, use_container_width=True)
+                st.caption(
+                    "Werte nahe 0: kaum linearer Zusammenhang. "
+                    "Werte >0.3 / <-0.3: moderate Korrelation."
+                )
+
+                # ── Rollende 90-Tage-Korrelationen ────────────────────────────
+                st.markdown("#### Rollende 90-Tage-Korrelationen")
+                pairs = [
+                    ("Gold", "BTC",     T["accent"]),
+                    ("Gold", "EUR_USD",  T["purple"]),
+                    ("BTC",  "EUR_USD",  T["up"]),
+                ]
+                fig_roll = go.Figure()
+                for col_a, col_b, color in pairs:
+                    if col_a not in _df.columns or col_b not in _df.columns:
+                        continue
+                    roll = (
+                        _df[col_a]
+                        .rolling(90)
+                        .corr(_df[col_b])
+                        .dropna()
+                    )
+                    a_label = ANZEIGE_NAMEN.get(col_a, col_a)
+                    b_label = ANZEIGE_NAMEN.get(col_b, col_b)
+                    fig_roll.add_trace(linie(
+                        x=roll.index, y=roll.values,
+                        name=f"{a_label} / {b_label}",
+                        color=color, width=2,
+                    ))
+                fig_roll.add_hline(
+                    y=0, line_width=1, line_dash="dot",
+                    line_color=T["border"],
+                )
+                fig_roll.update_layout(**base_layout(
+                    title="Rollende 90-Tage-Korrelation — paarweise",
+                    yaxis_title="Pearson ρ",
+                    height=320,
+                    legend=dict(
+                        orientation="h", yanchor="bottom", y=1.01,
+                        xanchor="left", x=0, bgcolor="rgba(0,0,0,0)",
+                        font=dict(color=T["text"]),
+                    ),
+                ))
+                st.plotly_chart(fig_roll, use_container_width=True)
+                st.caption(
+                    "Korrelationen sind zeitvariabel — Krisen (2020 COVID, 2022 FTX) "
+                    "erhöhen kurzfristig die Gleichlaufbewegungen."
+                )
+
+                # ── Deskriptive Statistik ─────────────────────────────────────
+                st.markdown("#### Deskriptive Statistik")
+                from scipy import stats as _scipy_stats
+
+                desc_rows = []
+                for col in _df.columns:
+                    s = _df[col].dropna()
+                    jb_stat, jb_p = _scipy_stats.jarque_bera(s)
+                    desc_rows.append({
+                        "Asset":          ANZEIGE_NAMEN.get(col, col),
+                        "Beobachtungen":  len(s),
+                        "Mittelwert":     round(float(s.mean()),  6),
+                        "Std.-Abw.":      round(float(s.std()),   6),
+                        "Min":            round(float(s.min()),   6),
+                        "Max":            round(float(s.max()),   6),
+                        "Schiefe":        round(float(_scipy_stats.skew(s)),     4),
+                        "Kurtosis":       round(float(_scipy_stats.kurtosis(s)), 4),
+                        "JB p-Wert":      round(float(jb_p),  4),
+                        "Normalverteilung?": "Nein (p<0.05)" if jb_p < 0.05 else "Ja",
+                    })
+                st.dataframe(
+                    pd.DataFrame(desc_rows),
+                    use_container_width=True, hide_index=True,
+                )
+                st.caption(
+                    "Jarque-Bera: H₀ = Normalverteilung. "
+                    "Finanzdaten haben typischerweise Fat Tails (Kurtosis > 3) → "
+                    "JB lehnt Normalverteilung ab."
+                )
+            except Exception as e:
+                st.warning(f"Berechnung nicht möglich: {str(e)}")
+
+        # ─────────────────────────────────────────────────────────────────────
         # Expander 1 — Johansen Kointegrations-Test
         # ─────────────────────────────────────────────────────────────────────
         with st.expander("01 — Kointegrations-Test (Johansen)", expanded=False):
