@@ -1,0 +1,8 @@
+[theme]
+# THWS — Technische Hochschule Würzburg-Schweinfurt
+# Primary brand colour: #EE750D (extracted from thws.de/fileadmin/template2016/css/fhws.css)
+primaryColor       = "#EE750D"
+backgroundColor    = "#1c1c1c"
+secondaryBackgroundColor = "#242424"
+textColor          = "#F0EDE8"
+font               = "monospace"

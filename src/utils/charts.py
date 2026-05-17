@@ -14,7 +14,7 @@ def base_layout(**overrides) -> dict:
         yaxis=dict(gridcolor=T["grid"], zeroline=False, showline=False,
                    tickfont=dict(size=11, color=T["text"])),
         margin=dict(l=60, r=20, t=50, b=45),
-        hoverlabel=dict(bgcolor="#1f2937", bordercolor=T["border"],
+        hoverlabel=dict(bgcolor=T["card_bg"], bordercolor=T["accent"],
                         font=dict(family=T["font"], size=12, color=T["text_bright"])),
         legend=dict(bgcolor="rgba(0,0,0,0)", bordercolor=T["border"],
                     font=dict(color=T["text"])),
