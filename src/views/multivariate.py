@@ -24,8 +24,8 @@ def render(zeitraum: str, zeitraum_label: str):
     )
 
     # ── Daten laden ───────────────────────────────────────────────────────────
-    with st.spinner("Lade alle Zeitreihen (5 Jahre)..."):
-        alle = lade_alle_zeitreihen(TICKER, ARIMA_PERIOD)
+    with st.spinner("Lade alle Zeitreihen ..."):
+        alle = lade_alle_zeitreihen(TICKER, zeitraum)
 
     if len(alle) < 2:
         st.error("Mindestens 2 Zeitreihen nötig.")
@@ -319,11 +319,11 @@ def render(zeitraum: str, zeitraum_label: str):
                     "Ist Kointegration vorhanden, wäre ein VECM anstelle von VAR geeignet. "
                     "Wir testen auf Basis der log-transformierten Preisniveaus."
                 )
-                with st.spinner("Berechne Johansen-Test (10 Jahre Preisdaten)..."):
+                with st.spinner("Berechne Johansen-Test ( Preisdaten)..."):
                     from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
                     # Load 10y price data (cached after first call)
-                    alle_raw = lade_alle_zeitreihen(TICKER, "10y")
+                    alle_raw = lade_alle_zeitreihen(TICKER, zeitraum)
                     log_prices = pd.DataFrame({
                         name: np.log(df["Close"])
                         for name, df in alle_raw.items()
