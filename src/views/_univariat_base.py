@@ -15,7 +15,7 @@ from scipy import stats as scipy_stats
 from src.utils.data import (lade_zeitreihe, deskriptive_statistik,
                               adf_test, kpss_test, berechne_log_returns)
 from src.utils.charts import base_layout, linie
-from src.utils.config import T, ARIMA_PERIOD, FORECAST_STEPS, TRAIN_RATIO
+from src.utils.config import T, FORECAST_STEPS, TRAIN_RATIO
 from src.models.arima_model import (box_jenkins_pipeline, qlr_test,
                                      chow_test_auf_diff, KANDIDATEN)
 
@@ -37,15 +37,15 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
     aktuell = float(close.iloc[-1])
     perf    = (aktuell - float(close.iloc[0])) / float(close.iloc[0]) * 100
     c1,c2,c3,c4 = st.columns(4)
-    c1.metric("Aktueller Preis",  f"{aktuell:,.4f} {einheit}")
-    c2.metric("Performance 5J",   f"{perf:+.2f}%")
-    c3.metric("Hoch (5J)",        f"{float(df['High'].max()):,.4f}")
-    c4.metric("Tief (5J)",        f"{float(df['Low'].min()):,.4f}")
+    c1.metric("Aktueller Preis",         f"{aktuell:,.4f} {einheit}")
+    c2.metric(f"Performance ({zeitraum_label})", f"{perf:+.2f}%")
+    c3.metric(f"Hoch ({zeitraum_label})",        f"{float(df['High'].max()):,.4f}")
+    c4.metric(f"Tief ({zeitraum_label})",        f"{float(df['Low'].min()):,.4f}")
 
     fig = go.Figure()
     fig.add_trace(linie(df["Date"], close, asset_key, farbe, fill=True))
     fig.update_layout(**base_layout(
-        title=f"{asset_key} – Preisverlauf (5 Jahre)",
+        title=f"{asset_key} – Preisverlauf ({zeitraum_label})",
         yaxis_title=einheit, height=340))
     st.plotly_chart(fig, use_container_width=True)
 

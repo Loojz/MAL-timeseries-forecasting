@@ -10,7 +10,7 @@ import numpy as np
 from src.utils.data import (lade_alle_zeitreihen, berechne_log_returns,
                              normiere, berechne_metriken)
 from src.utils.charts import base_layout, linie
-from src.utils.config import TICKER, ANZEIGE_NAMEN, ASSET_FARBEN, T, ARIMA_PERIOD, FORECAST_STEPS
+from src.utils.config import TICKER, ANZEIGE_NAMEN, ASSET_FARBEN, T, FORECAST_STEPS
 from src.models.var_model import (bereite_var_daten_vor, var_lag_selektion,
                                    var_modell_fitten, granger_causality_test,
                                    var_prognose, var_evaluation, state_space_ets)
@@ -50,7 +50,7 @@ def render(zeitraum: str, zeitraum_label: str):
             ))
         fig.add_hline(y=100, line_width=1, line_dash="dot", line_color=T["border"])
         fig.update_layout(**base_layout(
-            title="Normierter Vergleich · 5 Jahre (Start=100)",
+            title=f"Normierter Vergleich · {zeitraum_label} (Start=100)",
             yaxis_title="Index", height=380,
             legend=dict(orientation="h", yanchor="bottom", y=1.01,
                         xanchor="left", x=0, bgcolor="rgba(0,0,0,0)",
@@ -319,10 +319,10 @@ def render(zeitraum: str, zeitraum_label: str):
                     "Ist Kointegration vorhanden, wäre ein VECM anstelle von VAR geeignet. "
                     "Wir testen auf Basis der log-transformierten Preisniveaus."
                 )
-                with st.spinner("Berechne Johansen-Test ( Preisdaten)..."):
+                with st.spinner(f"Berechne Johansen-Test ({zeitraum_label} Preisdaten)..."):
                     from statsmodels.tsa.vector_ar.vecm import coint_johansen
 
-                    # Load 10y price data (cached after first call)
+                    # Load price data for selected period (cached after first call)
                     alle_raw = lade_alle_zeitreihen(TICKER, zeitraum)
                     log_prices = pd.DataFrame({
                         name: np.log(df["Close"])
