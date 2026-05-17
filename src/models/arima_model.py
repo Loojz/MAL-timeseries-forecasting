@@ -119,16 +119,24 @@ def qlr_test(series: pd.Series, trim: float = 0.15) -> dict:
 # ── Kandidatenmodelle (wie im Notebook definiert) ─────────────────────────────
 
 KANDIDATEN = [
-    ((0, 1, 0), "Random Walk",   "Benchmark – Markteffizienz-Hypothese (EMH)"),
-    ((1, 1, 0), "ARIMA(1,1,0)",  "AR(1) – gestriger Tag beeinflusst heute"),
-    ((0, 1, 1), "ARIMA(0,1,1)",  "MA(1) – gestriger Schock wirkt nach"),
-    ((1, 1, 1), "ARIMA(1,1,1)",  "ARMA(1,1) – kombiniert AR und MA"),
-    ((2, 1, 2), "ARIMA(2,1,2)",  "Komplex – nur sinnvoll bei mehreren sign. ACF/PACF-Lags"),
+    ((0, 0, 0), "Random Walk",  "Benchmark – Markteffizienz-Hypothese (EMH)"),
+    ((1, 0, 0), "ARMA(1,0)",    "AR(1) – gestriger Return beeinflusst heutigen"),
+    ((0, 0, 1), "ARMA(0,1)",    "MA(1) – gestriger Schock wirkt nach"),
+    ((1, 0, 1), "ARMA(1,1)",    "ARMA(1,1) – kombiniert AR und MA"),
+    ((2, 0, 2), "ARMA(2,2)",    "Komplex – nur sinnvoll bei sign. ACF/PACF-Lags"),
 ]
 
 
-def vergleiche_kandidaten(series: pd.Series, train: pd.Series, test: pd.Series) -> pd.DataFrame:
-    """Vergleicht Kandidatenmodelle wie im Gold-Notebook."""
+def vergleiche_kandidaten(
+    series: pd.Series,   # kept for backward compatibility — unused
+    train:  pd.Series,   # log-returns train set  (I(0), d=0)
+    test:   pd.Series,   # log-returns test set   (I(0), d=0)
+) -> pd.DataFrame:
+    """
+    Compares candidate ARMA models on log-returns (d=0).
+    Academically correct: log-returns are I(0) — no differencing needed.
+    BIC values are on the same scale as the Grid Search.
+    """
     from statsmodels.tsa.arima.model import ARIMA
     from sklearn.metrics import mean_squared_error, mean_absolute_error
     rows = []
@@ -145,7 +153,7 @@ def vergleiche_kandidaten(series: pd.Series, train: pd.Series, test: pd.Series) 
                 "AIC":           round(mod.aic, 2),
                 "BIC":           round(mod.bic, 2),
                 "RMSE (Test)":   round(rmse, 6),
-                "MAE (Test)":    round(mae, 6),
+                "MAE (Test)":    round(mae,  6),
                 "Koeff. sign.":  "Ja" if sig else "Nein — Überanpassung prüfen",
                 "Beschreibung":  beschr,
             })
@@ -322,15 +330,15 @@ def box_jenkins_pipeline(
         ),
     }
 
-    # ── Schritt 4: Kandidaten (BIC auf Preisen) + ergänzender Grid Search ─────
-    # Candidates are fit on raw price train/test with d=1 — exactly as in the
-    # individual feature-branch notebooks (Gold, BTC, EUR/USD).
-    # The BIC winner becomes bestes_order; it has d=1 and matches notebook results.
-    df_kand = vergleiche_kandidaten(series_clean, train_prices, test_prices)
+    # ── Schritt 4: Kandidaten (ARMA auf Log-Renditen, d=0) + Grid Search ────────
+    # Log-returns are I(0) — confirmed by ADF/KPSS in Schritt 1.
+    # Both Kandidaten and Grid Search fit ARMA(p,0,q) on log-returns so that
+    # BIC values are on the same scale and directly comparable.
+    df_kand = vergleiche_kandidaten(series_stat, train, test)
 
-    # BIC winner from candidates → bestes_order (d=1 label, notebook-consistent)
+    # BIC winner from candidates → bestes_order (d=0, ARMA notation)
     import ast as _ast
-    bestes_order = (0, 1, 1)   # safe fallback
+    bestes_order = (0, 0, 0)   # safe fallback (Random Walk)
     _kand_valid  = df_kand.dropna(subset=["BIC"]) if "BIC" in df_kand.columns else pd.DataFrame()
     if not _kand_valid.empty:
         try:
@@ -338,10 +346,8 @@ def box_jenkins_pipeline(
         except Exception:
             pass
 
-    # Log-return equivalent: ARIMA(p,1,q) on prices ≡ ARIMA(p,0,q) on log-returns.
-    # All downstream steps (forecast, CV, residuals, benchmark) operate in
-    # log-return space so RMSE values stay comparable with VAR/ETS/Chronos.
-    lr_order = (bestes_order[0], 0, bestes_order[2])
+    # lr_order = bestes_order (already d=0 — no conversion needed)
+    lr_order = bestes_order
 
     # Supplementary AIC grid search on log-returns (d=0) — shown in Research tab
     grid_rows, beste_aic, bestes_mod = [], np.inf, None

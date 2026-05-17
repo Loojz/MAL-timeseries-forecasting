@@ -263,10 +263,18 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
         with tab_kand:
             st.dataframe(res["schritt4_selektion"]["kandidaten_tabelle"],
                          use_container_width=True, hide_index=True)
-            st.caption("ARIMA(2,1,2): nicht signifikante Koeffizienten — Überanpassung (siehe Notebook)")
+            st.caption(
+                "Kandidatenmodelle: ARMA(p,0,q) auf Log-Renditen (d=0). "
+                "Log-Renditen sind I(0) — keine weitere Differenzierung nötig. "
+                "BIC-Werte sind direkt mit Grid Search vergleichbar."
+            )
         with tab_grid:
             st.dataframe(res["schritt4_selektion"]["grid_tabelle"],
                          use_container_width=True, hide_index=True)
+            st.caption(
+                "Grid Search: ARMA(p,0,q) auf Log-Renditen (d=0). "
+                "Log-Renditen sind I(0) — keine weitere Differenzierung nötig."
+            )
 
         st.success(res["schritt4_selektion"]["interpretation"])
 
