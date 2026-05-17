@@ -60,14 +60,17 @@ def var_lag_selektion(df_returns: pd.DataFrame, max_lags: int = 10) -> dict:
         })
 
     return {
-        "aic_lag":    aic_lag,
-        "bic_lag":    bic_lag,
-        "hqic_lag":   hqic_lag,
-        "empfohlen":  bic_lag,  # BIC bevorzugt (Parsimonie)
-        "tabelle":    pd.DataFrame(rows),
+        "aic_lag":       aic_lag,
+        "bic_lag":       bic_lag,
+        "hqic_lag":      hqic_lag,
+        "empfohlen":     3,          # Professorenstandard (hardcoded)
+        "empfohlen_bic": bic_lag,    # BIC-Empfehlung (meist p=1)
+        "empfohlen_aic": aic_lag,    # AIC-Empfehlung
+        "tabelle":       pd.DataFrame(rows),
         "interpretation": (
             f"AIC → p={aic_lag} | BIC → p={bic_lag} | HQIC → p={hqic_lag}\n"
-            f"Empfehlung: p={bic_lag} (BIC penalisiert Komplexität stärker)"
+            f"Wir verwenden VAR(3) (Professorenstandard) "
+            f"und VAR(1) (BIC-Empfehlung) im direkten Vergleich."
         ),
     }
 
@@ -215,6 +218,96 @@ def var_evaluation(df_returns: pd.DataFrame, lag: int,
         "test_df":               test,
         "train_test_vergleich":  train_test_vergleich,
     }
+
+
+def var_evaluation_beide(
+    df: pd.DataFrame,
+    lag_haupt: int = 3,
+    lag_bic:   int = 1,
+    train_ratio: float = 0.70,
+) -> dict:
+    """
+    Evaluates VAR(lag_haupt) and VAR(lag_bic) in parallel.
+    Returns metrics for both models plus Random Walk benchmark.
+    Includes in-sample train RMSE for overfitting diagnosis.
+    """
+    from statsmodels.tsa.vector_ar.var_model import VAR
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+    split    = int(len(df) * train_ratio)
+    df_train = df.iloc[:split]
+    df_test  = df.iloc[split:]
+
+    results = {
+        "split":    split,
+        "n_train":  len(df_train),
+        "n_test":   len(df_test),
+        "metriken": {},
+        "forecasts": {},
+        "prognosen": {},
+    }
+
+    for lag, label in [(lag_haupt, f"VAR({lag_haupt})"),
+                       (lag_bic,   f"VAR({lag_bic})")]:
+        try:
+            fit = VAR(df_train).fit(lag)
+
+            # Out-of-sample test forecast
+            fc_array = fit.forecast(df_train.values[-lag:], steps=len(df_test))
+            fc_df    = pd.DataFrame(fc_array, columns=df.columns, index=df_test.index)
+
+            # 10-step future forecast on full data
+            fit_full     = VAR(df).fit(lag)
+            fc_future    = fit_full.forecast(df.values[-lag:], steps=10)
+            fc_future_df = pd.DataFrame(fc_future, columns=df.columns)
+
+            # In-sample fitted values
+            fitted = fit.fittedvalues
+
+            col_metrics = {}
+            for col in df.columns:
+                test_rmse  = float(np.sqrt(mean_squared_error(df_test[col], fc_df[col])))
+                test_mae   = float(mean_absolute_error(df_test[col], fc_df[col]))
+                rw_rmse    = float(np.sqrt(mean_squared_error(
+                    df_test[col],
+                    np.full(len(df_test), df_train[col].iloc[-1]),
+                )))
+
+                # Train RMSE — align lengths (fittedvalues shorter by p lags)
+                min_len    = min(len(df_train[col]), len(fitted[col]))
+                train_rmse = float(np.sqrt(mean_squared_error(
+                    df_train[col].iloc[-min_len:],
+                    fitted[col].iloc[-min_len:],
+                )))
+                _ratio  = test_rmse / train_rmse if train_rmse > 0 else 1.0
+                ratio   = round(_ratio, 4) if train_rmse > 0 else "–"
+                diagnose = (
+                    "Overfitting-Risiko"
+                    if _ratio > 2.0
+                    else "Ruhigere Testperiode"
+                    if _ratio < 0.5
+                    else "Gut kalibriert"
+                )
+
+                col_metrics[col] = {
+                    label: {
+                        "RMSE":       round(test_rmse,  6),
+                        "MAE":        round(test_mae,   6),
+                        "Train RMSE": round(train_rmse, 6),
+                        "Ratio":      ratio,
+                        "Diagnose":   diagnose,
+                    },
+                    "RandomWalk": {"RMSE": round(rw_rmse, 6)},
+                }
+
+            results["metriken"][label]  = col_metrics
+            results["forecasts"][label] = fc_df
+            results["prognosen"][label] = fc_future_df
+
+        except Exception as e:
+            results["metriken"][label] = {"fehler": str(e)}
+
+    return results
 
 
 def state_space_ets(series: pd.Series, asset_name: str,

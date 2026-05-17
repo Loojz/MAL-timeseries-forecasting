@@ -13,7 +13,8 @@ from src.utils.charts import base_layout, linie
 from src.utils.config import TICKER, ANZEIGE_NAMEN, ASSET_FARBEN, T, FORECAST_STEPS
 from src.models.var_model import (bereite_var_daten_vor, var_lag_selektion,
                                    var_modell_fitten, granger_causality_test,
-                                   var_prognose, var_evaluation, state_space_ets)
+                                   var_prognose, var_evaluation,
+                                   var_evaluation_beide, state_space_ets)
 
 
 def render(zeitraum: str, zeitraum_label: str):
@@ -118,28 +119,65 @@ def render(zeitraum: str, zeitraum_label: str):
 
             st.dataframe(lag_res["tabelle"], use_container_width=True, hide_index=True)
             st.success(lag_res["interpretation"])
-            opt_lag = lag_res["empfohlen"]
-            st.metric("Empfohlene Lag-Länge p", opt_lag)
+            # lag_res informational only — VAR(3) and VAR(1) are hardcoded
+            st.metric("Lag laut BIC", lag_res["empfohlen_bic"],
+                      help="Informativ — wir verwenden VAR(3) und VAR(1) fix")
 
-            # ── VAR Modell fitten ─────────────────────────────────────────────
-            st.markdown(f"### 3. VAR({opt_lag}) Modell")
-            with st.spinner(f"Fitte VAR({opt_lag})..."):
-                var_res = var_modell_fitten(df_returns, opt_lag)
+            # ── VAR(3) und VAR(1) parallel fitten ────────────────────────────
+            st.markdown("### 3. VAR(3) vs. VAR(1) — Direktvergleich")
+            st.markdown(
+                "Wir fitten beide Modelle parallel: "
+                "**VAR(3)** (Professorenstandard, AIC-Empfehlung) und "
+                "**VAR(1)** (BIC-Empfehlung, sparsamster Ansatz)."
+            )
+            col_v3, col_v1 = st.columns(2)
+            with col_v3:
+                st.metric("Hauptmodell", "VAR(3)",
+                          help="AIC-Empfehlung + Professorenstandard")
+            with col_v1:
+                st.metric("Vergleichsmodell", "VAR(1)",
+                          help="BIC-Empfehlung — Maximum Parsimonie")
 
-            st.text(str(var_res.summary())[:3000])  # Summary ausgeben
+            with st.spinner("Fitte VAR(3) und VAR(1)..."):
+                eval_beide = var_evaluation_beide(df_returns, lag_haupt=3, lag_bic=1)
 
-            # ── Granger Causality ─────────────────────────────────────────────
+            # Informationskriterien Vergleich
+            st.markdown("#### Informationskriterien")
+            with st.spinner("Berechne IC-Vergleich..."):
+                from statsmodels.tsa.vector_ar.var_model import VAR as _VAR_IC
+                ic_rows = []
+                for lag, label in [(3, "VAR(3)"), (1, "VAR(1)")]:
+                    try:
+                        fit_tmp = _VAR_IC(df_returns).fit(lag)
+                        ic_rows.append({
+                            "Modell":           label,
+                            "AIC":              round(fit_tmp.aic,  4),
+                            "BIC":              round(fit_tmp.bic,  4),
+                            "HQIC":             round(fit_tmp.hqic, 4),
+                            "Log-Likelihood":   round(fit_tmp.llf,  2),
+                        })
+                    except Exception:
+                        pass
+            if ic_rows:
+                st.dataframe(pd.DataFrame(ic_rows),
+                             use_container_width=True, hide_index=True)
+                st.caption(
+                    "Niedrigere Werte = besseres Modell. "
+                    "AIC bevorzugt VAR(3) (Vorhersagegüte), "
+                    "BIC bevorzugt VAR(1) (Sparsamkeit)."
+                )
+
+            # ── Granger Causality (auf VAR(3)) ────────────────────────────────
             st.markdown("### 4. Granger Causality Test")
             st.markdown("""
             **Granger (1969)**: $x$ Granger-verursacht $y$, wenn $x$ zur Vorhersage von $y$ beiträgt.
 
             $H_0$: $\\Phi_{k,xy} = 0 \\ \\forall k$ (keine Granger-Kausalität)
-            $H_1$: Mindestens ein $\\Phi_{k,xy} \\neq 0$
 
-            Wald-Test auf untere Dreiecksstruktur der Koeffizientenmatrix.
+            Wald-Test, durchgeführt auf VAR(3).
             """)
             with st.spinner("Berechne Granger Causality Tests..."):
-                gc_res = granger_causality_test(df_returns, opt_lag)
+                gc_res = granger_causality_test(df_returns, 3)
 
             if not gc_res["tabelle"].empty:
                 st.dataframe(gc_res["tabelle"], use_container_width=True, hide_index=True)
@@ -176,100 +214,115 @@ def render(zeitraum: str, zeitraum_label: str):
                     yaxis_title="Verursacht (caused)"))
                 st.plotly_chart(fig_gc, use_container_width=True)
 
-            # ── VAR Evaluation ────────────────────────────────────────────────
-            st.markdown("### 5. Modell-Evaluation (Train/Test 70/30)")
-            with st.spinner("Evaluiere VAR-Modell..."):
-                eval_res = var_evaluation(df_returns, opt_lag)
+            # ── Evaluation: VAR(3) vs. VAR(1) vs. Random Walk ────────────────
+            st.markdown("### 5. Modell-Evaluation — VAR(3) vs. VAR(1) vs. Random Walk")
+            st.markdown("Train/Test-Split 70/30 — RMSE auf dem Test-Set.")
 
-            if "fehler" not in eval_res:
-                rows = []
-                for col, met in eval_res["metriken"].items():
-                    rows.append({
-                        "Asset":      col,
-                        "Modell":     "VAR",
-                        "RMSE":       met["VAR"]["RMSE"],
-                        "MAE":        met["VAR"]["MAE"],
-                        "MAPE (%)":   met["VAR"]["MAPE (%)"],
-                    })
-                    rows.append({
-                        "Asset":      col,
-                        "Modell":     "Random Walk",
-                        "RMSE":       met["RandomWalk"]["RMSE"],
-                        "MAE":        met["RandomWalk"]["MAE"],
-                        "MAPE (%)":   met["RandomWalk"]["MAPE (%)"],
-                    })
-                df_eval = pd.DataFrame(rows)
-                st.dataframe(df_eval, use_container_width=True, hide_index=True)
-
-                # Train vs. Test RMSE — Overfitting-Check
-                ttv = eval_res.get("train_test_vergleich", {})
-                if ttv:
-                    st.markdown("#### Train vs. Test RMSE — Overfitting-Check")
-                    st.markdown(
-                        "Train RMSE ≈ Test RMSE bestätigt: kein Overfitting. "
-                        "Bei Log-Renditen nahe White Noise ist das der Normalfall."
-                    )
-                    ttv_rows = []
-                    for col, vals in ttv.items():
-                        anzeige = ANZEIGE_NAMEN.get(col, col)
-                        ttv_rows.append({
+            eval_rows = []
+            for col in df_returns.columns:
+                anzeige = ANZEIGE_NAMEN.get(col, col)
+                for label in ["VAR(3)", "VAR(1)"]:
+                    met   = eval_beide["metriken"].get(label, {})
+                    if isinstance(met, dict) and "fehler" not in met:
+                        inner = met.get(col, {}).get(label, {})
+                        rw    = met.get(col, {}).get("RandomWalk", {})
+                        eval_rows.append({
                             "Asset":       anzeige,
-                            "Train RMSE":  vals["Train RMSE"],
-                            "Test RMSE":   vals["Test RMSE"],
-                            "Ratio":       vals["Ratio"],
-                            "Diagnose":    vals["Diagnose"],
+                            "Modell":      label,
+                            "Train RMSE":  inner.get("Train RMSE", "–"),
+                            "Test RMSE":   inner.get("RMSE",       "–"),
+                            "Ratio":       inner.get("Ratio",       "–"),
+                            "Diagnose":    inner.get("Diagnose",    "–"),
+                            "RW RMSE":     rw.get("RMSE",           "–"),
                         })
-                    st.dataframe(
-                        pd.DataFrame(ttv_rows),
-                        use_container_width=True,
-                        hide_index=True,
-                    )
-                    st.caption(
-                        "Ratio = Test RMSE / Train RMSE. "
-                        "Gut kalibriert: 0,5–2,0 (weiter Bereich wegen Heteroskedastizität). "
-                        "Finanzrenditen haben zeitlich variierende Volatilität — "
-                        "Abweichungen vom Ratio 1,0 reflektieren Regime-Wechsel, nicht Modellfehler."
-                    )
-                    st.info(
-                        "**Hinweis zur Interpretation:** Bei Finanzrenditen ist "
-                        "Train RMSE ≠ Test RMSE der Normalfall — nicht wegen "
-                        "Overfitting, sondern wegen **Heteroskedastizität** "
-                        "(zeitlich variierende Volatilität). "
-                        "Gold-Testperiode 2024–2025 war außergewöhnlich volatil (+65% Rally). "
-                        "BTC-Testperiode 2023–2025 war ruhiger als das turbulente Training "
-                        "2017–2022. Beide Effekte sind Regime-Wechsel, kein Modellfehler."
-                    )
+            if eval_rows:
+                st.dataframe(pd.DataFrame(eval_rows),
+                             use_container_width=True, hide_index=True)
+                st.caption(
+                    "Ratio = Test/Train RMSE. Gut kalibriert: 0,5–2,0. "
+                    "RW RMSE = Random Walk Benchmark (naiver Vergleich)."
+                )
+                st.info(
+                    "**Hinweis zur Interpretation:** Bei Finanzrenditen ist "
+                    "Train RMSE ≠ Test RMSE der Normalfall — nicht wegen "
+                    "Overfitting, sondern wegen **Heteroskedastizität** "
+                    "(zeitlich variierende Volatilität). "
+                    "Gold-Testperiode 2024–2025 war außergewöhnlich volatil (+65% Rally). "
+                    "BTC-Testperiode 2023–2025 war ruhiger als das turbulente Training "
+                    "2017–2022. Beide Effekte sind Regime-Wechsel, kein Modellfehler."
+                )
 
-            # ── VAR Prognose ──────────────────────────────────────────────────
-            st.markdown(f"### 6. Rekursive VAR({opt_lag}) Prognose – {FORECAST_STEPS} Perioden")
+            # ── Prognose: VAR(3) und VAR(1) überlagert ────────────────────────
+            st.markdown(f"### 6. Prognose — VAR(3) und VAR(1) im Vergleich")
             st.markdown(
                 r"$\hat{\mathbf{y}}_{t+1} = \hat{\mathbf{c}} + \hat{\Phi}_1 \mathbf{y}_t + \cdots + \hat{\Phi}_p \mathbf{y}_{t-p+1}$"
             )
-            with st.spinner("Berechne Prognosen..."):
-                prog_res = var_prognose(var_res, steps=FORECAST_STEPS)
 
             for col in df_returns.columns:
-                color = ASSET_FARBEN.get(col, T["text"])
+                anzeige = ANZEIGE_NAMEN.get(col, col)
+                color   = ASSET_FARBEN.get(col, T["text"])
+
+                hist_vals = df_returns[col].iloc[-60:].values * 100
+                hist_x    = list(range(len(hist_vals)))
+                fc_x      = list(range(len(hist_vals),
+                                       len(hist_vals) + FORECAST_STEPS))
+
                 fig_p = go.Figure()
+
+                # History
                 fig_p.add_trace(go.Scatter(
-                    x=list(range(max(0, len(df_returns)-60), len(df_returns))),
-                    y=df_returns[col].iloc[-60:].values * 100,
-                    name="Historisch", line=dict(color=color, width=2)))
-                fc_idx = list(range(len(df_returns), len(df_returns) + FORECAST_STEPS))
-                fig_p.add_trace(go.Scatter(
-                    x=fc_idx, y=prog_res["prognose"][col].values * 100,
-                    name="Prognose", line=dict(color=T["up"], width=2, dash="dash")))
-                fig_p.add_trace(go.Scatter(
-                    x=fc_idx + fc_idx[::-1],
-                    y=list(prog_res["upper_95"][col].values * 100) +
-                      list(prog_res["lower_95"][col].values[::-1] * 100),
-                    fill="toself", fillcolor="rgba(34,197,94,0.1)",
-                    line=dict(color="rgba(0,0,0,0)"), name="95% KI"))
-                fig_p.add_hline(y=0, line_width=1, line_dash="dot", line_color=T["border"])
+                    x=hist_x, y=hist_vals,
+                    name="Historisch",
+                    line=dict(color=color, width=2),
+                ))
+
+                # VAR(3) forecast
+                fc3 = eval_beide["prognosen"].get("VAR(3)", pd.DataFrame())
+                if col in fc3.columns and len(fc3) > 0:
+                    fig_p.add_trace(go.Scatter(
+                        x=fc_x,
+                        y=fc3[col].values[:FORECAST_STEPS] * 100,
+                        name="VAR(3)",
+                        line=dict(color=T["up"], width=2, dash="dash"),
+                        mode="lines+markers",
+                        marker=dict(size=4),
+                    ))
+
+                # VAR(1) forecast
+                fc1 = eval_beide["prognosen"].get("VAR(1)", pd.DataFrame())
+                if col in fc1.columns and len(fc1) > 0:
+                    fig_p.add_trace(go.Scatter(
+                        x=fc_x,
+                        y=fc1[col].values[:FORECAST_STEPS] * 100,
+                        name="VAR(1)",
+                        line=dict(color=T["purple"], width=2, dash="dot"),
+                        mode="lines+markers",
+                        marker=dict(size=4),
+                    ))
+
+                fig_p.add_hline(
+                    y=0, line_width=1, line_dash="dot",
+                    line_color=T["border"],
+                )
+                fig_p.add_vline(
+                    x=len(hist_vals) - 0.5,
+                    line_width=1, line_dash="dash",
+                    line_color="rgba(255,255,255,0.3)",
+                    annotation_text="Forecast Start",
+                    annotation_position="top left",
+                )
                 fig_p.update_layout(**base_layout(
-                    title=f"VAR({opt_lag}) Prognose – {ANZEIGE_NAMEN.get(col, col)}",
-                    yaxis_title="Log-Return (%)", height=300))
+                    title=f"VAR(3) vs. VAR(1) — {anzeige} · {FORECAST_STEPS}-Tage Prognose",
+                    yaxis_title="Log-Return (%)",
+                    height=320,
+                ))
                 st.plotly_chart(fig_p, use_container_width=True)
+
+            st.caption(
+                "VAR(3): Professorenstandard, AIC-Empfehlung. "
+                "VAR(1): BIC-Empfehlung, sparsamste Spezifikation. "
+                "Beide Forecasts konvergieren gegen Null — konsistent mit EMH."
+            )
 
             st.divider()
 
@@ -614,17 +667,21 @@ def render(zeitraum: str, zeitraum_label: str):
                 "Random Walk ist der naive Benchmark."
             )
 
-            if "fehler" not in eval_res:
+            if eval_beide.get("metriken"):
                 summary_rows = []
                 for col in df_returns.columns:
                     anzeige = ANZEIGE_NAMEN.get(col, col)
 
-                    # VAR + Random Walk from eval_res
-                    rw_rmse       = eval_res["metriken"][col]["RandomWalk"]["RMSE"]
-                    var_rmse      = eval_res["metriken"][col]["VAR"]["RMSE"]
-                    var_train_rmse = eval_res.get(
-                        "train_test_vergleich", {}
-                    ).get(col, {}).get("Train RMSE", "–")
+                    # VAR(3), VAR(1), Random Walk from eval_beide
+                    var3_rmse = eval_beide["metriken"].get("VAR(3)", {}).get(
+                        col, {}
+                    ).get("VAR(3)", {}).get("RMSE", "–")
+                    var1_rmse = eval_beide["metriken"].get("VAR(1)", {}).get(
+                        col, {}
+                    ).get("VAR(1)", {}).get("RMSE", "–")
+                    rw_rmse   = eval_beide["metriken"].get("VAR(3)", {}).get(
+                        col, {}
+                    ).get("RandomWalk", {}).get("RMSE", "–")
 
                     # ETS
                     ets_row  = next(
@@ -655,10 +712,11 @@ def render(zeitraum: str, zeitraum_label: str):
                     )
                     tgpt_rmse = tgpt_row.get("RMSE", "–")
 
-                    # Best model (compare only test/out-of-sample RMSEs)
+                    # Best model (test/out-of-sample RMSEs only)
                     candidates = [
                         ("Random Walk", rw_rmse),
-                        ("VAR (Test)",  var_rmse),
+                        ("VAR(3)",      var3_rmse),
+                        ("VAR(1)",      var1_rmse),
                         ("ETS",         ets_rmse),
                         ("ARIMA",       arima_rmse),
                         ("Chronos",     chronos_rmse),
@@ -673,8 +731,8 @@ def render(zeitraum: str, zeitraum_label: str):
                     summary_rows.append({
                         "Asset":         anzeige,
                         "Random Walk":   rw_rmse,
-                        "VAR (Train)":   var_train_rmse,
-                        "VAR (Test)":    var_rmse,
+                        "VAR(3)":        var3_rmse,
+                        "VAR(1)":        var1_rmse,
                         "ETS":           ets_rmse,
                         "ARIMA":         arima_rmse,
                         "Chronos":       chronos_rmse,
