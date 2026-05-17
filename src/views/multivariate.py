@@ -258,15 +258,19 @@ def render(zeitraum: str, zeitraum_label: str):
             arima_metriken  = []
 
             for asset_name, df_asset in alle.items():
-                anzeige = ANZEIGE_NAMEN.get(asset_name, asset_name)
-                color   = ASSET_FARBEN.get(asset_name, T["text"])
-                log_ret = berechne_log_returns(df_asset).dropna()
+                anzeige    = ANZEIGE_NAMEN.get(asset_name, asset_name)
+                color      = ASSET_FARBEN.get(asset_name, T["text"])
+                log_ret    = berechne_log_returns(df_asset).dropna()
+                # box_jenkins_pipeline expects raw close prices — it computes
+                # log-returns internally. Passing pre-computed log-returns would
+                # trigger a second log-transform, producing garbage for Gold/EUR-USD.
+                close_series = df_asset["Close"].dropna()
 
                 with st.spinner(f"Fitte ARIMA für {anzeige}..."):
                     try:
                         from src.models.arima_model import box_jenkins_pipeline
                         arima_res = box_jenkins_pipeline(
-                            log_ret, anzeige,
+                            close_series, anzeige,
                             forecast_steps=FORECAST_STEPS,
                         )
                     except Exception as e:
