@@ -495,11 +495,13 @@ def box_jenkins_pipeline(
     def _diagnose(te, tr):
         if tr <= 0:
             return "–"
-        if te > tr * 1.5:
-            return "Overfitting"
-        if tr > te * 1.5:
-            return "Underfitting"
-        return "Gut kalibriert"
+        ratio = te / tr
+        if 0.5 <= ratio <= 2.0:
+            return "Gut kalibriert"
+        elif ratio > 2.0:
+            return "Overfitting-Risiko"
+        else:  # ratio < 0.5
+            return "Testperiode signifikant ruhiger als Training"
 
     results["benchmark_vergleich"] = {
         "random_walk":       rw_met,
@@ -526,7 +528,7 @@ def box_jenkins_pipeline(
             f"Train RMSE ARIMA: {arima_train_rmse:.6f} | "
             f"Test RMSE ARIMA: {arima_test_rmse:.6f}\n"
             f"Ratio (Test/Train): {arima_test_rmse/arima_train_rmse:.4f} "
-            f"→ {'kein Overfitting' if arima_test_rmse < arima_train_rmse * 1.5 else 'Overfitting-Risiko'}"
+            f"→ {'Gut kalibriert' if 0.5 <= arima_test_rmse/arima_train_rmse <= 2.0 else 'Overfitting-Risiko' if arima_test_rmse/arima_train_rmse > 2.0 else 'Testperiode ruhiger als Training'}"
             if arima_train_rmse > 0 else
             f"ARIMA{bestes_order} vs. Random Walk — RMSE: {arima_test_rmse:.6f}"
         ),

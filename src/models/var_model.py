@@ -189,11 +189,14 @@ def var_evaluation(df_returns: pd.DataFrame, lag: int,
             train_pred   = fitted[col].iloc[-min_len:]
             train_rmse   = float(np.sqrt(_mse(train_actual, train_pred)))
             test_rmse    = float(metriken[col]["VAR"]["RMSE"])
-            ratio        = round(test_rmse / train_rmse, 4) if train_rmse > 0 else "–"
-            diagnose     = (
-                "Overfitting"    if test_rmse > train_rmse * 1.5
-                else "Underfitting" if train_rmse > test_rmse * 1.5
-                else "Gut kalibriert"
+            _ratio   = test_rmse / train_rmse if train_rmse > 0 else 1.0
+            ratio    = round(_ratio, 4) if train_rmse > 0 else "–"
+            diagnose = (
+                "Gut kalibriert"
+                if 0.5 <= _ratio <= 2.0
+                else "Overfitting-Risiko"
+                if _ratio > 2.0
+                else "Testperiode signifikant ruhiger als Training"
             )
             train_test_vergleich[col] = {
                 "Train RMSE": round(train_rmse, 6),

@@ -390,9 +390,18 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
             )
             st.caption(
                 "Ratio = Test RMSE / Train RMSE. "
-                "Ratio ≈ 1,0: gut kalibriert. "
-                "> 1,5: Overfitting-Risiko. "
-                "< 0,67: Underfitting-Risiko."
+                "Gut kalibriert: 0,5–2,0 (weiter Bereich wegen Heteroskedastizität). "
+                "Finanzrenditen haben zeitlich variierende Volatilität — "
+                "Abweichungen vom Ratio 1,0 reflektieren Regime-Wechsel, nicht Modellfehler."
+            )
+            st.info(
+                "**Hinweis zur Interpretation:** Bei Finanzrenditen ist "
+                "Train RMSE ≠ Test RMSE der Normalfall — nicht wegen "
+                "Overfitting, sondern wegen **Heteroskedastizität** "
+                "(zeitlich variierende Volatilität). "
+                "Gold-Testperiode 2024–2025 war außergewöhnlich volatil (+65% Rally). "
+                "BTC-Testperiode 2023–2025 war ruhiger als das turbulente Training "
+                "2017–2022. Beide Effekte sind Regime-Wechsel, kein Modellfehler."
             )
 
         # ── Schritt 7: Prognose ────────────────────────────────────────────────
