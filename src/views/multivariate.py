@@ -201,6 +201,35 @@ def render(zeitraum: str, zeitraum_label: str):
                 df_eval = pd.DataFrame(rows)
                 st.dataframe(df_eval, use_container_width=True, hide_index=True)
 
+                # Train vs. Test RMSE — Overfitting-Check
+                ttv = eval_res.get("train_test_vergleich", {})
+                if ttv:
+                    st.markdown("#### Train vs. Test RMSE — Overfitting-Check")
+                    st.markdown(
+                        "Train RMSE ≈ Test RMSE bestätigt: kein Overfitting. "
+                        "Bei Log-Renditen nahe White Noise ist das der Normalfall."
+                    )
+                    ttv_rows = []
+                    for col, vals in ttv.items():
+                        anzeige = ANZEIGE_NAMEN.get(col, col)
+                        ttv_rows.append({
+                            "Asset":       anzeige,
+                            "Train RMSE":  vals["Train RMSE"],
+                            "Test RMSE":   vals["Test RMSE"],
+                            "Ratio":       vals["Ratio"],
+                            "Diagnose":    vals["Diagnose"],
+                        })
+                    st.dataframe(
+                        pd.DataFrame(ttv_rows),
+                        use_container_width=True,
+                        hide_index=True,
+                    )
+                    st.caption(
+                        "Ratio = Test RMSE / Train RMSE. "
+                        "Ratio ≈ 1,0: gut kalibriert — kein Overfitting. "
+                        "Erwartet bei effizienten Märkten: Train ≈ Test."
+                    )
+
             # ── VAR Prognose ──────────────────────────────────────────────────
             st.markdown(f"### 6. Rekursive VAR({opt_lag}) Prognose – {FORECAST_STEPS} Perioden")
             st.markdown(
@@ -581,8 +610,11 @@ def render(zeitraum: str, zeitraum_label: str):
                     anzeige = ANZEIGE_NAMEN.get(col, col)
 
                     # VAR + Random Walk from eval_res
-                    rw_rmse  = eval_res["metriken"][col]["RandomWalk"]["RMSE"]
-                    var_rmse = eval_res["metriken"][col]["VAR"]["RMSE"]
+                    rw_rmse       = eval_res["metriken"][col]["RandomWalk"]["RMSE"]
+                    var_rmse      = eval_res["metriken"][col]["VAR"]["RMSE"]
+                    var_train_rmse = eval_res.get(
+                        "train_test_vergleich", {}
+                    ).get(col, {}).get("Train RMSE", "–")
 
                     # ETS
                     ets_row  = next(
@@ -613,10 +645,10 @@ def render(zeitraum: str, zeitraum_label: str):
                     )
                     tgpt_rmse = tgpt_row.get("RMSE", "–")
 
-                    # Best model
+                    # Best model (compare only test/out-of-sample RMSEs)
                     candidates = [
                         ("Random Walk", rw_rmse),
-                        ("VAR",         var_rmse),
+                        ("VAR (Test)",  var_rmse),
                         ("ETS",         ets_rmse),
                         ("ARIMA",       arima_rmse),
                         ("Chronos",     chronos_rmse),
@@ -631,7 +663,8 @@ def render(zeitraum: str, zeitraum_label: str):
                     summary_rows.append({
                         "Asset":         anzeige,
                         "Random Walk":   rw_rmse,
-                        "VAR":           var_rmse,
+                        "VAR (Train)":   var_train_rmse,
+                        "VAR (Test)":    var_rmse,
                         "ETS":           ets_rmse,
                         "ARIMA":         arima_rmse,
                         "Chronos":       chronos_rmse,

@@ -366,6 +366,35 @@ def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label
         else:
             st.warning(bm["interpretation"])
 
+        # Train vs. Test RMSE — Overfitting-Check
+        ttv = bm.get("train_test_vergleich", {})
+        if ttv:
+            st.markdown("#### Train vs. Test RMSE — Overfitting-Check")
+            st.markdown(
+                "Train RMSE ≈ Test RMSE → kein Overfitting. "
+                "Ratio (Test/Train) nahe 1,0 = gut kalibriert."
+            )
+            ttv_rows = []
+            for modell, vals in ttv.items():
+                ttv_rows.append({
+                    "Modell":      modell,
+                    "Train RMSE":  vals["Train RMSE"],
+                    "Test RMSE":   vals["Test RMSE"],
+                    "Ratio":       vals["Ratio"],
+                    "Diagnose":    vals["Diagnose"],
+                })
+            st.dataframe(
+                pd.DataFrame(ttv_rows),
+                use_container_width=True,
+                hide_index=True,
+            )
+            st.caption(
+                "Ratio = Test RMSE / Train RMSE. "
+                "Ratio ≈ 1,0: gut kalibriert. "
+                "> 1,5: Overfitting-Risiko. "
+                "< 0,67: Underfitting-Risiko."
+            )
+
         # ── Schritt 7: Prognose ────────────────────────────────────────────────
         st.markdown("### Schritt 7: Prognose mit 95%-Vorhersageintervall")
         st.markdown(r"$\hat{y}_{t+h|t} \pm 1.96 \cdot \hat{\sigma}_h$")
