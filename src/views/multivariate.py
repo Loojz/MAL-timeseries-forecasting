@@ -251,12 +251,11 @@ def render(zeitraum: str, zeitraum_label: str):
             st.divider()
             st.subheader("8. ARIMA — Univariate Modelle")
             st.markdown(
-                "Box-Jenkins ARIMA wird für jedes Asset separat auf Log-Renditen "
-                "geschätzt. Automatische Modellwahl via AIC/BIC."
+                "Box-Jenkins ARIMA wird für jedes Asset separat auf "
+                "Log-Renditen geschätzt. Automatische Modellwahl via AIC/BIC."
             )
 
-            arima_metriken = []
-            arima_forecasts = {}
+            arima_metriken  = []
 
             for asset_name, df_asset in alle.items():
                 anzeige = ANZEIGE_NAMEN.get(asset_name, asset_name)
@@ -266,19 +265,36 @@ def render(zeitraum: str, zeitraum_label: str):
                 with st.spinner(f"Fitte ARIMA für {anzeige}..."):
                     try:
                         from src.models.arima_model import box_jenkins_pipeline
-                        arima_res = box_jenkins_pipeline(log_ret, anzeige)
+                        arima_res = box_jenkins_pipeline(
+                            log_ret, anzeige,
+                            forecast_steps=FORECAST_STEPS,
+                        )
                     except Exception as e:
-                        st.warning(f"ARIMA ({anzeige}): {e}")
+                        st.warning(f"ARIMA ({anzeige}) Fehler: {e}")
+                        arima_metriken.append({
+                            "Asset":         anzeige,
+                            "Bestes Modell": "–",
+                            "RMSE":          "–",
+                            "MAE":           "–",
+                        })
                         continue
 
-                if "fehler" in arima_res:
-                    st.warning(f"ARIMA ({anzeige}): {arima_res['fehler']}")
-                    continue
+                # Extract values using correct keys
+                best_order = (
+                    arima_res.get("bestes_order")
+                    or arima_res.get("schritt4_selektion", {}).get("bestes_order", (0, 1, 0))
+                )
 
-                # Store metrics — keys live in nested sub-dicts from box_jenkins_pipeline
-                best_order = arima_res.get("schritt4_selektion", {}).get("bestes_order", "?")
-                rmse_val   = arima_res.get("benchmark_vergleich", {}).get("arima", {}).get("RMSE", "–")
-                mae_val    = arima_res.get("benchmark_vergleich", {}).get("arima", {}).get("MAE",  "–")
+                prognose  = arima_res.get("schritt7_prognose", {})
+                fc_values = prognose.get("prognose_mean",   None)
+                fc_lower  = prognose.get("konfidenz_lower", None)
+                fc_upper  = prognose.get("konfidenz_upper", None)
+
+                benchmark = arima_res.get("benchmark_vergleich", {})
+                arima_met = benchmark.get("arima", {})
+                rmse_val  = arima_met.get("RMSE", "–")
+                mae_val   = arima_met.get("MAE",  "–")
+
                 arima_metriken.append({
                     "Asset":         anzeige,
                     "Bestes Modell": f"ARIMA{best_order}",
@@ -286,46 +302,47 @@ def render(zeitraum: str, zeitraum_label: str):
                     "MAE":           mae_val,
                 })
 
-                # Store forecast for combined plot
-                arima_forecasts[asset_name] = arima_res
-
-                # Forecast values from schritt7_prognose (statsmodels Series)
-                _prognose = arima_res.get("schritt7_prognose", {})
-                fc_values = _prognose.get("prognose_mean",   None)
-                fc_lower  = _prognose.get("konfidenz_lower", None)
-                fc_upper  = _prognose.get("konfidenz_upper", None)
-
-                if fc_values is not None:
+                # Forecast plot
+                if fc_values is not None and len(fc_values) > 0:
                     hist_vals = log_ret.iloc[-60:].values * 100
                     hist_x    = list(range(len(hist_vals)))
                     fc_len    = len(fc_values)
-                    fc_x      = list(range(len(hist_vals),
-                                          len(hist_vals) + fc_len))
+                    fc_x      = list(range(
+                        len(hist_vals),
+                        len(hist_vals) + fc_len,
+                    ))
 
                     fig_a = go.Figure()
+
+                    # History
                     fig_a.add_trace(go.Scatter(
                         x=hist_x, y=hist_vals,
                         name="Historisch",
                         line=dict(color=color, width=2),
                     ))
+
+                    # ARIMA forecast
                     fig_a.add_trace(go.Scatter(
                         x=fc_x,
-                        y=[v * 100 for v in fc_values],
+                        y=fc_values.values * 100,
                         name=f"ARIMA{best_order}",
                         line=dict(color=T["purple"], width=2, dash="dash"),
                         mode="lines+markers",
                         marker=dict(size=4),
                     ))
+
+                    # 95% CI
                     if fc_lower is not None and fc_upper is not None:
                         fig_a.add_trace(go.Scatter(
                             x=fc_x + fc_x[::-1],
-                            y=[v * 100 for v in fc_upper] +
-                              [v * 100 for v in fc_lower[::-1]],
+                            y=list(fc_upper.values * 100)
+                              + list(fc_lower.values[::-1] * 100),
                             fill="toself",
                             fillcolor="rgba(139,92,246,0.12)",
                             line=dict(color="rgba(0,0,0,0)"),
                             name="95% KI",
                         ))
+
                     fig_a.add_hline(
                         y=0, line_width=1, line_dash="dot",
                         line_color=T["border"],
@@ -338,12 +355,18 @@ def render(zeitraum: str, zeitraum_label: str):
                         annotation_position="top left",
                     )
                     fig_a.update_layout(**base_layout(
-                        title=f"ARIMA{best_order} — {anzeige} · {FORECAST_STEPS}-Tage Prognose",
+                        title=(
+                            f"ARIMA{best_order} — {anzeige} · "
+                            f"{FORECAST_STEPS}-Tage Prognose"
+                        ),
                         yaxis_title="Log-Return (%)",
                         height=300,
                     ))
                     st.plotly_chart(fig_a, use_container_width=True)
+                else:
+                    st.info(f"ARIMA ({anzeige}): Kein Forecast verfügbar.")
 
+            # Metrics table
             if arima_metriken:
                 st.dataframe(
                     pd.DataFrame(arima_metriken),
