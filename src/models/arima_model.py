@@ -284,7 +284,10 @@ def box_jenkins_pipeline(
     }
 
     # ── Train/Test Split ──────────────────────────────────────────────────────
-    train, test = train_test_split_ts(series_stat, train_ratio)
+    # Price-level split for candidate fitting (d=1 is meaningful on prices).
+    # Log-return split for CV, residuals, forecast (keeps outputs in return space).
+    train_prices, test_prices = train_test_split_ts(series_clean, train_ratio)
+    train, test               = train_test_split_ts(series_stat,  train_ratio)
     results["train_test"] = {
         "n_train": len(train), "n_test": len(test),
         "ratio": f"{int(train_ratio*100)}/{int((1-train_ratio)*100)}",
@@ -319,37 +322,70 @@ def box_jenkins_pipeline(
         ),
     }
 
-    # ── Schritt 4: Kandidaten + Grid Search ───────────────────────────────────
-    df_kand = vergleiche_kandidaten(series_clean, train, test)
-    grid_rows, beste_aic, bestes_order, bestes_mod = [], np.inf, (0,1,1), None
+    # ── Schritt 4: Kandidaten (BIC auf Preisen) + ergänzender Grid Search ─────
+    # Candidates are fit on raw price train/test with d=1 — exactly as in the
+    # individual feature-branch notebooks (Gold, BTC, EUR/USD).
+    # The BIC winner becomes bestes_order; it has d=1 and matches notebook results.
+    df_kand = vergleiche_kandidaten(series_clean, train_prices, test_prices)
 
+    # BIC winner from candidates → bestes_order (d=1 label, notebook-consistent)
+    import ast as _ast
+    bestes_order = (0, 1, 1)   # safe fallback
+    _kand_valid  = df_kand.dropna(subset=["BIC"]) if "BIC" in df_kand.columns else pd.DataFrame()
+    if not _kand_valid.empty:
+        try:
+            bestes_order = _ast.literal_eval(_kand_valid.iloc[0]["Order"])
+        except Exception:
+            pass
+
+    # Log-return equivalent: ARIMA(p,1,q) on prices ≡ ARIMA(p,0,q) on log-returns.
+    # All downstream steps (forecast, CV, residuals, benchmark) operate in
+    # log-return space so RMSE values stay comparable with VAR/ETS/Chronos.
+    lr_order = (bestes_order[0], 0, bestes_order[2])
+
+    # Supplementary AIC grid search on log-returns (d=0) — shown in Research tab
+    grid_rows, beste_aic, bestes_mod = [], np.inf, None
     for p_ord, q_ord in product(range(max_p+1), range(max_q+1)):
         if p_ord == 0 and q_ord == 0:
             continue
         try:
-            mod = ARIMA(train, order=(p_ord, 0, q_ord)).fit()
-            fc  = mod.forecast(steps=len(test))
+            mod  = ARIMA(train, order=(p_ord, 0, q_ord)).fit()
+            fc   = mod.forecast(steps=len(test))
             rmse = np.sqrt(mean_squared_error(test, fc))
             grid_rows.append({
                 "ARIMA": f"({p_ord},0,{q_ord})",
-                "AIC": round(mod.aic,2), "BIC": round(mod.bic,2),
-                "RMSE (Test)": round(rmse,6),
+                "AIC":   round(mod.aic, 2),
+                "BIC":   round(mod.bic, 2),
+                "RMSE (Test)": round(rmse, 6),
             })
             if mod.aic < beste_aic:
-                beste_aic, bestes_order, bestes_mod = mod.aic, (p_ord,0,q_ord), mod
+                beste_aic, bestes_mod = mod.aic, mod
         except Exception:
             continue
 
-    df_grid = pd.DataFrame(grid_rows).sort_values("AIC").reset_index(drop=True)
+    # Fit bestes_mod with lr_order on log-return train for residuals/benchmark
+    try:
+        bestes_mod = ARIMA(train, order=lr_order).fit()
+    except Exception:
+        pass   # keep grid winner as fallback if lr_order fails
+
+    df_grid = pd.DataFrame(grid_rows).sort_values("AIC").reset_index(drop=True) \
+              if grid_rows else pd.DataFrame()
+
+    _bic_label = (
+        f"{_kand_valid.iloc[0]['Modell']} (BIC={_kand_valid.iloc[0]['BIC']:.2f})"
+        if not _kand_valid.empty and "BIC" in _kand_valid.columns else "–"
+    )
     results["schritt4_selektion"] = {
         "kandidaten_tabelle": df_kand,
         "grid_tabelle":       df_grid,
-        "bestes_order":       bestes_order,
+        "bestes_order":       bestes_order,   # (p,1,q) — matches notebook notation
+        "lr_order":           lr_order,        # (p,0,q) — used for log-return forecast
         "bestes_aic":         round(beste_aic, 2),
         "bestes_modell":      bestes_mod,
         "interpretation": (
-            f"BIC-Sieger: {df_kand.iloc[0]['Modell']} (BIC={df_kand.iloc[0]['BIC']:.2f})\n"
-            f"Grid AIC-Sieger: ARIMA{bestes_order}\n"
+            f"BIC-Sieger (Preise, d=1): {_bic_label}\n"
+            f"Log-Return-Äquivalent für Prognose: ARIMA{lr_order}\n"
             f"Koeff. nicht sign. — Überanpassung (siehe ARIMA(2,1,2) im Gold-Notebook)"
         ),
     }
@@ -358,8 +394,8 @@ def box_jenkins_pipeline(
         results["fehler"] = "Kein Modell gefittet"
         return results
 
-    # ── CV ────────────────────────────────────────────────────────────────────
-    results["cross_validation"] = walk_forward_cv(series_stat, bestes_order)
+    # ── CV (log-return space, lr_order) ───────────────────────────────────────
+    results["cross_validation"] = walk_forward_cv(series_stat, lr_order)
 
     # ── Schritt 5: Residualdiagnose (5-Check) ─────────────────────────────────
     diag = residual_diagnostics_dict(bestes_mod)
@@ -405,7 +441,7 @@ def box_jenkins_pipeline(
 
     # ── Schritt 7: Prognose ────────────────────────────────────────────────────
     try:
-        full_mod = ARIMA(series_stat, order=bestes_order).fit()
+        full_mod = ARIMA(series_stat, order=lr_order).fit()
         fc       = full_mod.get_forecast(steps=forecast_steps)
         ci       = fc.conf_int(alpha=0.05)
         results["schritt7_prognose"] = {
@@ -434,8 +470,7 @@ def box_jenkins_pipeline(
         "arima_besser_rmse": arima_met.get("RMSE",999) < rw_met.get("RMSE",999),
         "interpretation": (
             f"ARIMA{bestes_order} vs. Random Walk:\n"
-            f"RMSE ARIMA: {arima_met.get('RMSE','–')} | RMSE RW: {rw_met.get('RMSE','–')}\n"
-            f"EUR/USD: ARIMA(0,1,0) gewinnt — klassischer Random Walk"
+            f"RMSE ARIMA: {arima_met.get('RMSE','–')} | RMSE RW: {rw_met.get('RMSE','–')}"
         ),
     }
 
