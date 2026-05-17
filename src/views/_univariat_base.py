@@ -23,7 +23,7 @@ from src.models.arima_model import (box_jenkins_pipeline, qlr_test,
 def render_univariat(asset_key, ticker, farbe, einheit, zeitraum, zeitraum_label):
 
     with st.spinner(f"Lade Daten..."):
-        df = lade_zeitreihe(ticker, ARIMA_PERIOD)
+        df = lade_zeitreihe(ticker, zeitraum)
 
     if df.empty:
         st.error("Keine Daten verfügbar.")
