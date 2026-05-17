@@ -39,6 +39,17 @@ def render(zeitraum: str, zeitraum_label: str):
 
         # ── Normierter Vergleich ──────────────────────────────────────────────
         st.subheader("Normierter Vergleich aller Assets — Start = 100")
+
+        # Log-scale toggle — essential when Bitcoin dwarfs Gold/EUR-USD
+        use_log = st.toggle(
+            "Logarithmische Y-Achse",
+            value=True,
+            help=(
+                "Log-Skala empfohlen: Bitcoin wächst 100-1000× stärker als Gold/EUR-USD. "
+                "Auf linearer Skala erscheinen Gold und EUR/USD als flache Linie."
+            ),
+        )
+
         fig = go.Figure()
         for name, df in alle.items():
             y = normiere(df)
@@ -51,11 +62,18 @@ def render(zeitraum: str, zeitraum_label: str):
         fig.add_hline(y=100, line_width=1, line_dash="dot", line_color=T["border"])
         fig.update_layout(**base_layout(
             title=f"Normierter Vergleich · {zeitraum_label} (Start=100)",
-            yaxis_title="Index", height=380,
+            yaxis_title="Index (log)" if use_log else "Index",
+            yaxis_type="log" if use_log else "linear",
+            height=380,
             legend=dict(orientation="h", yanchor="bottom", y=1.01,
                         xanchor="left", x=0, bgcolor="rgba(0,0,0,0)",
                         font=dict(color=T["text"]))))
         st.plotly_chart(fig, use_container_width=True)
+        if use_log:
+            st.caption(
+                "Log-Skala: gleiche vertikale Abstände = gleiche prozentuale Veränderung. "
+                "Bitcoin +10.000% und Gold +200% sind beide klar erkennbar."
+            )
 
         st.divider()
 
