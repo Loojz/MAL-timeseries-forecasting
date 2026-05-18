@@ -198,27 +198,64 @@ def ordnung_der_integration(series: pd.Series) -> int:
 
 # ── Evaluationsmetriken ───────────────────────────────────────────────────────
 
-def berechne_metriken(y_true: pd.Series, y_pred: np.ndarray, modell_name: str = "") -> dict:
+def berechne_metriken(
+    y_true,
+    y_pred,
+    modell_name: str = "",
+    include_mape: bool = False,
+) -> dict:
     """
-    Berechnet Prognosegütemetriken (Folie 11).
-    MSE, RMSE, MAE, MAPE
+    Compute forecast error metrics (MSE, RMSE, MAE).
+
+    Parameters
+    ----------
+    y_true : array-like
+        Actual observed values.
+    y_pred : array-like
+        Forecasted values.
+    modell_name : str
+        Label for the model in the output dict.
+    include_mape : bool
+        Whether to include MAPE. Default False — MAPE is invalid
+        for log-returns near zero (division by ~0 yields >100%).
+        Only set True for price-level series far from zero.
+        Reference: Hyndman & Koehler (2006).
+
+    Returns
+    -------
+    dict with Modell, MSE, RMSE, MAE (and optionally MAPE).
     """
-    from sklearn.metrics import mean_absolute_error, mean_squared_error
-    y_true = np.array(y_true)
-    y_pred = np.array(y_pred)
-    mse    = float(np.mean((y_true - y_pred) ** 2))
-    rmse   = float(np.sqrt(mse))
-    mae    = float(np.mean(np.abs(y_true - y_pred)))
-    # MAPE: vermeidet Division durch 0
-    mask   = np.abs(y_true) > 1e-10
-    mape   = float(np.mean(np.abs((y_true[mask] - y_pred[mask]) / y_true[mask])) * 100)
-    return {
+    from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+    y_true = np.array(y_true, dtype=float)
+    y_pred = np.array(y_pred, dtype=float)
+
+    # Remove NaN pairs
+    mask   = ~(np.isnan(y_true) | np.isnan(y_pred))
+    y_true = y_true[mask]
+    y_pred = y_pred[mask]
+
+    if len(y_true) == 0:
+        return {"Modell": modell_name, "MSE": "–", "RMSE": "–", "MAE": "–"}
+
+    mse  = float(mean_squared_error(y_true, y_pred))
+    rmse = float(np.sqrt(mse))
+    mae  = float(mean_absolute_error(y_true, y_pred))
+
+    met = {
         "Modell": modell_name,
-        "MSE":    round(mse, 8),
-        "RMSE":   round(rmse, 8),
-        "MAE":    round(mae, 8),
-        "MAPE (%)": round(mape, 4),
+        "MSE":    round(mse,  6),
+        "RMSE":   round(rmse, 6),
+        "MAE":    round(mae,  6),
     }
+
+    if include_mape:
+        # Only safe for price-level series far from zero
+        with np.errstate(divide="ignore", invalid="ignore"):
+            mape = np.mean(np.abs((y_true - y_pred) / y_true)) * 100
+        met["MAPE (%)"] = round(float(mape), 4) if np.isfinite(mape) else "–"
+
+    return met
 
 
 # ── Parquet ───────────────────────────────────────────────────────────────────
