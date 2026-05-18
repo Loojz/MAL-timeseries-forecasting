@@ -351,7 +351,6 @@ def render(zeitraum: str, zeitraum_label: str):
                         "α (ETS)":   ets_res["alpha"],
                         "RMSE":      ets_res["metriken"]["RMSE"],
                         "MAE":       ets_res["metriken"]["MAE"],
-                        "MAPE (%)":  ets_res["metriken"]["MAPE (%)"],
                     })
 
             if ets_metriken:
@@ -655,8 +654,9 @@ def render(zeitraum: str, zeitraum_label: str):
                     hide_index=True,
                 )
                 st.caption(
-                    "MAPE ausgeschlossen — bei Log-Renditen nahe Null "
-                    "führt Division durch ~0 zu verzerrten Werten."
+                    "Metriken: RMSE, MAE. MAPE wird nicht ausgewiesen — "
+                    "bei Log-Renditen nahe Null führt Division durch ~0 zu "
+                    "irreführenden Werten (Hyndman & Koehler, 2006)."
                 )
 
             # ── Gesamtübersicht Modellvergleich ───────────────────────────────
@@ -748,7 +748,8 @@ def render(zeitraum: str, zeitraum_label: str):
                 st.caption(
                     "RMSE = √MSE — kleinere Werte bedeuten bessere Prognose. "
                     "Random Walk ist der naive Benchmark (H₀: Einheitswurzel). "
-                    "MAPE ausgeschlossen (instabil bei Log-Renditen nahe 0)."
+                    "MAPE wird nicht ausgewiesen — instabil bei Log-Renditen nahe 0 "
+                    "(Hyndman & Koehler, 2006)."
                 )
 
     # ═══════════════════════════════════════════════════════════════════════════
@@ -1307,8 +1308,9 @@ def render(zeitraum: str, zeitraum_label: str):
                 )
                 st.dataframe(master, use_container_width=True, hide_index=True)
                 st.caption(
-                    "MAPE wurde ausgeschlossen — bei Log-Renditen nahe Null "
-                    "führt Division durch sehr kleine Werte zu verzerrten Werten."
+                    "Metriken: MSE, RMSE, MAE. MAPE wird nicht ausgewiesen — "
+                    "bei Log-Renditen nahe Null führt Division durch ~0 zu "
+                    "irreführenden Werten (Hyndman & Koehler, 2006)."
                 )
 
                 # Winner summary — 3 metric columns
@@ -1633,8 +1635,9 @@ Feintuning auf neuen Zeitreihen Prognosen erstellen können
                         hide_index=True,
                     )
                     st.caption(
-                        "MAPE ausgeschlossen — bei Log-Renditen nahe Null "
-                        "führt Division durch ~0 zu verzerrten Werten."
+                        "Metriken: RMSE, MAE. MAPE wird nicht ausgewiesen — "
+                        "bei Log-Renditen nahe Null führt Division durch ~0 zu "
+                        "irreführenden Werten (Hyndman & Koehler, 2006)."
                     )
 
             except Exception as e:
